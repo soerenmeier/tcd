@@ -2,7 +2,7 @@
 
 ### Receiving
 
-Everything in big-endian
+Everything in little-endian
 
 Sync
 ```

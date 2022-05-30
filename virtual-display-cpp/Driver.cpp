@@ -1,7 +1,7 @@
 /*++
 
 Copyright (c) Microsoft Corporation (https://github.com/microsoft/Windows-driver-samples/tree/main/video/IndirectDisplay/IddSampleDriver)
-Copyright (c) Sören meier
+Copyright (c) Sören Meier
 
 Abstract:
 
