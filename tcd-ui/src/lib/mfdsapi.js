@@ -103,16 +103,21 @@ function initWs() {
 		let blob = wsMsg.data;
 		blob = blob.slice(0, blob.size, 'image/jpeg');
 		const reader = new FileReader;
-		reader.addEventListener('load', () => {
+		const readerLoaded = () => {
+			reader.removeEventListener('load', readerLoaded);
+
 			const img = new Image;
 			img.src = reader.result;
-			img.addEventListener('load', () => {
-				currentFrames.set(kind, img);
+			const imgLoaded = () => {
+				img.removeEventListener('load', imgLoaded);
 
+				currentFrames.set(kind, img);
 				notify(kind);
-			});
+			};
+			img.addEventListener('load', imgLoaded);
 			
-		});
+		};
+		reader.addEventListener('load', readerLoaded);
 		reader.readAsDataURL(blob);
 	});
 }
