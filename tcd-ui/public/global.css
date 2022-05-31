@@ -1,8 +1,10 @@
 
 :root {
 	--white: #fff;
-	--dark-gray: #1e1e1e;
-	--black: #424242;
+	--dark: #1e1e1e;
+	--dark-gray: #2e2d2d;
+	--gray: #424242;
+	--light-gray: #707070;
 	--error-red: #ff2929;
 }
 
@@ -22,7 +24,7 @@ body {
 	font-family: 'Open Sans', Arial, sans-serif;
 	font-size: 17px;
 	overflow: hidden;
-	color: var(--black);
+	color: var(--gray);
 }
 
 .full-size {
