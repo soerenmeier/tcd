@@ -14,20 +14,39 @@
 <button
 	on:click|preventDefault={() => btn.click()}
 	class:active={$btn}
-></button>
+>
+	<div class="stroke"></div>
+</button>
 
 <style>
 	button {
+		position: relative;
 		display: block;
 		width: 40px;
 		height: 40px;
-		background-color: var(--black);
+		background-color: var(--gray);
 		outline: none;
 		border: none;
+		border-radius: 3px;
 	}
 
 	button.active {
-		background-color: var(--white);
+		background-color: var(--dark-gray);
+	}
+
+	.stroke {
+		position: absolute;
+		width: 80%;
+		height: 80%;
+		border: 2px solid var(--light-gray);
+		border-radius: 2px;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%,-50%);
+	}
+
+	.active .stroke {
+		border: 2px solid var(--gray);
 	}
 
 	/*button:active {

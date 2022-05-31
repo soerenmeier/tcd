@@ -14,6 +14,7 @@
 
 <div id="mfcds" bind:this={cont}>
 	<Mfcd size={maxSize} kind="LeftMfcd" name="MFD_L" />
+	<div class="splitter"></div>
 	<Mfcd size={maxSize} kind="RightMfcd" name="MFD_R" />
 </div>
 
@@ -24,6 +25,12 @@
 		padding: 10px;
 		justify-content: space-between;
 		align-items: center;
+		background-color: var(--dark);
+	}
+
+	.splitter {
+		height: 100%;
+		width: 2px;
 		background-color: var(--dark-gray);
 	}
 </style>

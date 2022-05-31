@@ -96,7 +96,7 @@
 	.btns {
 		display: flex;
 		gap: 10px;
-		justify-content: center;
+		justify-content: space-evenly;
 	}
 
 	.left, .right {
@@ -108,11 +108,11 @@
 	}
 
 	.right {
-		grid-area: 1 / 3 / 4 / 4;
+		grid-area: 2 / 3 / 3 / 4;
 	}
 
 	.left {
-		grid-area: 1 / 1 / 4 / 2;
+		grid-area: 2 / 1 / 3 / 2;
 	}
 
 	.bottom {
