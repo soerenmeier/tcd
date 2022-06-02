@@ -1,0 +1,101 @@
+name: Release
+on:
+  push:
+    tags: ["*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Check Signtool
+        run: xcopy "C:\Program Files (x86)\Windows Kits\10\bin\10.0.20348.0\x64\signtool.exe" .
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.1
+        with:
+          vs-version: '16'
+          msbuild-architecture: x64
+
+      - name: Setup Cargo
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup node js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+
+      - name: Build Virtual Display Rust
+        run: |
+          cd virtual-display
+          cargo build --release
+
+      - name: Build Virtual Display C++
+        run: |
+          cd virtual-display-cpp
+          msbuild virtual-display-cpp.sln /p:Configuration=Release /p:Platform=x64
+
+      - name: Build Tcd Ui
+        run: |
+          cd tcd-ui
+          npm ci
+          npm run build
+
+      - name: Build Tcd Server
+        run: |
+          cd tcd-server
+          cargo build --release --features "self-host"
+
+      - name: Prepare signature
+        run: |
+          echo "${{ secrets.ONEFOUR_PFX }}" > onefour.pfx.txt
+          certutil -decode onefour.pfx.txt onefour.pfx
+
+      - name: Prepare publish folder
+        run: |
+          mkdir dist
+
+      - name: Sign Driver
+        run: |
+          .\signtool.exe sign /f onefour.pfx /fd SHA256 /p ${{ secrets.ONEFOUR_PASSWORD }} virtual-display-cpp\x64\Release\virtual-display-cpp\virtual-display-cpp.cat
+          xcopy virtual-display-cpp\x64\Release\virtual-display-cpp dist\driver\
+
+      - name: Sign Server
+        run: |
+          .\signtool.exe sign /f onefour.pfx /fd SHA256 /p ${{ secrets.ONEFOUR_PASSWORD }} tcd-server\target\release\tcd-server.exe
+          xcopy tcd-server\target\release\tcd-server.exe dist\
+
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: tcd
+          path: dist
+
+      - name: Prepare archive
+        run: Compress-Archive -Path .\dist -DestinationPath tcd.zip -Compression Optimal
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+            tag_name: ${{ github.ref }}
+            release_name: ${{ github.ref }}
+
+      - name: Upload Archive
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        with:
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+            asset_path: .\tcd.zip
+            asset_name: tcd.zip
+            asset_content_type: application/zip

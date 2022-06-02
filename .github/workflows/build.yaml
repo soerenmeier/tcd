@@ -1,0 +1,67 @@
+name: Build
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.1
+        with:
+          vs-version: '16'
+          msbuild-architecture: x64
+
+      - name: Setup Cargo
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup node js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+
+      - name: Prepare publish folder
+        run: |
+          mkdir dist
+
+      - name: Build Virtual Display Rust
+        run: |
+          cd virtual-display
+          cargo build --release
+
+      - name: Build Virtual Display C++
+        run: |
+          cd virtual-display-cpp
+          msbuild virtual-display-cpp.sln /p:Configuration=ReleaseSelfSigned /p:Platform=x64
+          xcopy x64\ReleaseSelfSigned\virtual-display-cpp ..\dist\driver\
+          xcopy x64\ReleaseSelfSigned\virtual-display-cpp.cer ..\dist\driver\
+
+      - name: Build Tcd Ui
+        run: |
+          cd tcd-ui
+          npm ci
+          npm run build
+
+      - name: Build Tcd Server
+        run: |
+          cd tcd-server
+          cargo build --release --features "self-host"
+          xcopy target\release\tcd-server.exe ..\dist\
+
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: tcd
+          path: dist
