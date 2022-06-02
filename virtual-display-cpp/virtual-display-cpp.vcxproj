@@ -5,6 +5,14 @@
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseSelfSigned|ARM64">
+      <Configuration>ReleaseSelfSigned</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseSelfSigned|x64">
+      <Configuration>ReleaseSelfSigned</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
@@ -47,12 +55,22 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|x64'" Label="PropertySheets">
+    <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+  </PropertyGroup>
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
   </PropertyGroup>
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|ARM64'" Label="PropertySheets">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
@@ -69,6 +87,15 @@
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
+    <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
+    <IDDCX_VERSION_MINOR>4</IDDCX_VERSION_MINOR>
+    <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
+    <IndirectDisplayDriver>true</IndirectDisplayDriver>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>false</UseDebugLibraries>
     <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
@@ -95,6 +122,15 @@
     <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
     <IndirectDisplayDriver>true</IndirectDisplayDriver>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|ARM64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
+    <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
+    <IDDCX_VERSION_MINOR>4</IDDCX_VERSION_MINOR>
+    <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
+    <IndirectDisplayDriver>true</IndirectDisplayDriver>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -110,10 +146,17 @@
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|x64'">
+    <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
+    <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|ARM64'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -150,6 +193,23 @@
       <AdditionalLibraryDirectories>$(ProjectDir)..\virtual-display\target\release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|x64'">
+    <ClCompile>
+      <WppEnabled>true</WppEnabled>
+      <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppScanConfigurationData Condition="'%(ClCompile.ScanConfigurationData)' == ''">trace.h</WppScanConfigurationData>
+      <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=1 /DIDDCX_VERSION_MINOR=6 /DIDDCX_MINIMUM_VERSION_REQUIRED=4 %(AdditionalOptions)</AdditionalOptions>
+      <ExceptionHandling>Async</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(ProjectDir)\..\virtual-display;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+    <Link>
+      <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib;virtual_display.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\virtual-display\target\release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
@@ -161,6 +221,16 @@
     </DriverSign>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <ClCompile>
+      <WppEnabled>true</WppEnabled>
+      <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppScanConfigurationData Condition="'%(ClCompile.ScanConfigurationData)' == ''">trace.h</WppScanConfigurationData>
+    </ClCompile>
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSelfSigned|ARM64'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
       <WppRecorderEnabled>true</WppRecorderEnabled>
