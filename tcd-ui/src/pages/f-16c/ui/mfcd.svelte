@@ -14,16 +14,16 @@
 
 	let unsubscribe = () => {};
 
+	const displayPadding = 2 * 10 + 2 * 40;
+
 	onMount(async () => {
 		// calculate size
 		const s = size();
 		cont.style.width = s + 'px';
 		cont.style.height = s + 'px';
 
-		await timeout(200);
-
 		const ctx = new Context2d(canvas);
-		ctx.updateSize();
+		ctx.updateSize(s - displayPadding, s - displayPadding);
 
 		unsubscribe = subscribe(kind, frame => {
 			if (!frame)
