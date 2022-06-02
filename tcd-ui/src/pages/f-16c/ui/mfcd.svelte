@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import MfcdButton from './mfcd-button.svelte';
 	import Context2d from 'fire/dom/context2d.js';
+	import { timeout } from 'fire/util.js';
 	import { subscribe } from './../../../lib/mfdsapi.js';
 
 	export let name;
@@ -13,27 +14,13 @@
 
 	let unsubscribe = () => {};
 
-	// function resize(displayCont) {
-	// 	if (!displayCont)
-	// 		return;
-
-	// 	console.log('displayCont', displayCont);
-	// }
-	// $: resize(displayCont);
-
-	function newCanvas(el) {
-		// const ctx = new Context2d(el);
-		// ctx.updateSize();
-
-		// ctx.fillCircle(ctx.width / 2, ctx.height / 2, 100);
-	}
-
-	onMount(() => {
+	onMount(async () => {
 		// calculate size
 		const s = size();
-		console.log('size', s);
 		cont.style.width = s + 'px';
 		cont.style.height = s + 'px';
+
+		await timeout(200);
 
 		const ctx = new Context2d(canvas);
 		ctx.updateSize();
