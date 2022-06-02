@@ -55,6 +55,7 @@ impl ControlDefinitions {
 
 #[derive(Debug, Clone)]
 pub(super) struct InnerControlDefinitions {
+	#[allow(dead_code)]
 	metadata: ControlDefs,
 	raw_metadata: RawControls,
 	aircraft: Option<String>,

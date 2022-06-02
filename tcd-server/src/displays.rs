@@ -19,6 +19,7 @@ impl DisplaySetup {
 		}
 	}
 
+	#[allow(dead_code)]
 	pub fn get(&self) -> Option<Displays> {
 		self.inner.borrow().clone()
 	}
