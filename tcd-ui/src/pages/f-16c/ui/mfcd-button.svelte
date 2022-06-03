@@ -36,13 +36,12 @@
 
 	.stroke {
 		position: absolute;
+		top: 10%;
+		left: 10%;
 		width: 80%;
 		height: 80%;
 		border: 2px solid var(--light-gray);
 		border-radius: 2px;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%,-50%);
 	}
 
 	.active .stroke {

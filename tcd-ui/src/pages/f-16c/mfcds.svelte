@@ -1,5 +1,9 @@
 <script>
+	import { createEventDispatcher } from 'svelte';
 	import Mfcd from './ui/mfcd.svelte';
+	import BackBtn from './../../ui/back-btn.svelte';
+
+	const dispatch = createEventDispatcher();
 
 	let cont = null;
 
@@ -11,6 +15,10 @@
 		return Math.min(w, h) - padding;
 	}
 </script>
+
+<div class="back-btn">
+	<BackBtn on:click={() => dispatch('close')} />
+</div>
 
 <div id="mfcds" bind:this={cont}>
 	<Mfcd size={maxSize} kind="LeftMfcd" name="MFD_L" />
@@ -25,12 +33,17 @@
 		padding: 10px;
 		justify-content: space-between;
 		align-items: center;
-		background-color: var(--dark);
 	}
 
 	.splitter {
 		height: 100%;
 		width: 2px;
 		background-color: var(--dark-gray);
+	}
+
+	.back-btn {
+		position: absolute;
+		top: 10px;
+		left: 10px;
 	}
 </style>

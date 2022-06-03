@@ -1,20 +1,12 @@
 <script>
 	import { createEventDispatcher } from 'svelte';
-	import Mfcds from './mfcds.svelte';
-	import FlyingPeregrine from './flying-peregrine.svelte';
 	import PageList from './../../ui/pagelist.svelte';
 
 	const dispatch = createEventDispatcher();
 
-	const pages = [
-		{ name: 'MFCDS', comp: Mfcds },
-		{ name: 'Flying Peregrine', comp: FlyingPeregrine }
-	];
+	const pages = [];
 
 	let activePage = null;
-
-	// debug
-	// activePage = pages[0];
 </script>
 
 {#if activePage}
@@ -25,7 +17,7 @@
 {:else}
 	<PageList
 		{pages}
-		title="F-16C"
+		title="F-18C"
 		showBackBtn={true}
 		on:close={() => dispatch('close')}
 		on:open={e => activePage = e.detail}

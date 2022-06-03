@@ -104,7 +104,7 @@ export class InputValue extends Data {
 	}
 }
 
-
+// fn (null | Response)
 export function subscribe(name, fn) {
 	if (failed)
 		throw new Error('cannot subscribe websocket connection failed');
