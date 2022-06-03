@@ -98,7 +98,7 @@ async fn stream_task(
 				.expect("missing aicraft");
 
 			let loaded = defs.load_aircraft(&aircraft);
-			if !loaded {
+			if !loaded && !aircraft.is_empty() {
 				eprintln!("could not load aircraft {}", aircraft);
 				continue
 			}

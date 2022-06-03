@@ -13,15 +13,19 @@ use tokio::fs;
 
 use serde::{Serialize, Deserialize};
 
-const METADATA_DIR: &str = r"C:\Program Files\DCS-BIOS\control-reference-json";
-
-fn plugin_dir() -> PathBuf {
+fn control_ref() -> PathBuf {
 	let appdata = env::var("APPDATA").expect("appdata not found");
-	PathBuf::from(appdata).join(r"DCS-BIOS\Plugins")
+	PathBuf::from(appdata).join(r"DCS-BIOS\control-reference-json")
 }
 
-const AIRCRAFTS: &[(&str, &str)] = &[
-	("F-16C_50", "f-16c-50")
+const AIRCRAFTS: &[&str] = &[
+	"AV8BNA",
+	"Christen Eagle II",
+	"F-14B",
+	"F-16C_50",
+	"FA-18C_hornet",
+	"M-2000C",
+	"P-51D"
 ];
 
 #[derive(Debug, Clone)]
@@ -64,15 +68,13 @@ pub(super) struct InnerControlDefinitions {
 
 impl InnerControlDefinitions {
 	pub async fn new() -> Result<Self, Error> {
-		let start = File::new(
-			Path::new(METADATA_DIR).join("MetadataStart.json")
-		).await.map_err(|_| Error::FailedToOpenMetadata)?;
-		let end = File::new(
-			Path::new(METADATA_DIR).join("MetadataEnd.json")
-		).await.map_err(|_| Error::FailedToOpenMetadata)?;
-		let common = File::new(
-			plugin_dir().join(r"module-commondata\CommonData.json")
-		).await.map_err(|_| Error::FailedToOpenMetadata)?;
+		let control_ref = control_ref();
+		let start = File::new(control_ref.join("MetadataStart.json")).await
+			.map_err(|_| Error::FailedToOpenMetadata)?;
+		let end = File::new(control_ref.join("MetadataEnd.json")).await
+			.map_err(|_| Error::FailedToOpenMetadata)?;
+		let common = File::new(control_ref.join("CommonData.json")).await
+			.map_err(|_| Error::FailedToOpenMetadata)?;
 
 		let mut metadata = ControlDefs::new();
 		let mut raw_metadata = RawControls::new();
@@ -83,10 +85,8 @@ impl InnerControlDefinitions {
 
 		let mut aircrafts = HashMap::new();
 
-		for (name, folder_name) in AIRCRAFTS {
-			let mut path = plugin_dir();
-			path.push(format!("module-{}", folder_name));
-			path.push(format!("{}.json", name));
+		for name in AIRCRAFTS {
+			let path = control_ref.join(format!("{}.json", name));
 			let file = File::new(&path).await;
 			let file = match file {
 				Ok(f) => f,
