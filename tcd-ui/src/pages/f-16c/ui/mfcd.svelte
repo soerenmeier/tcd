@@ -25,6 +25,8 @@
 		const ctx = new Context2d(canvas);
 		ctx.updateSize(s - displayPadding, s - displayPadding);
 
+		ctx.fillRect(0, 0, ctx.width, ctx.height);
+
 		unsubscribe = subscribe(kind, frame => {
 			if (!frame)
 				return;

@@ -14,7 +14,13 @@ use fire::{FireBuilder, ws_route};
 enum Request {
 	Subscribe(String),
 	Unsubscribe(String),
-	Input(Input)
+	Input(Input),
+	Aknowledge
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Announce {
+	pub len: u32
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,10 +33,13 @@ ws_route! {
 	WsApi, "/api/controls/stream",
 	|ws, dcs_bios| -> Result<(), Error> {
 		let mut subscribed: HashSet<String> = HashSet::new();
+		let mut was_aknowledged = true;
 
 		loop {
 			tokio::select! {
-				_ = dcs_bios.changed(), if !subscribed.is_empty() => {
+				_ = dcs_bios.changed(),
+					if !subscribed.is_empty() && was_aknowledged
+				=> {
 					// we need to store the responses before sending
 					// to hold the watch Lock as short as possible
 					let mut responses = Vec::with_capacity(subscribed.len());
@@ -46,10 +55,17 @@ ws_route! {
 						}
 					}
 
+					ws.serialize(&Announce {
+						len: responses.len() as u32
+					}).await
+						.map_err(|e| Error::Internal(e.to_string()))?;
+
 					for response in responses {
 						ws.serialize(&response).await
 							.map_err(|e| Error::Internal(e.to_string()))?;
 					}
+
+					was_aknowledged = false;
 				},
 				req = ws.deserialize() => {
 					let req = req.map_err(|e| Error::Internal(e.to_string()))?;
@@ -67,6 +83,9 @@ ws_route! {
 						},
 						Request::Input(inp) => {
 							dcs_bios.send(inp).await;
+						},
+						Request::Aknowledge => {
+							was_aknowledged = true;
 						}
 					}
 				}

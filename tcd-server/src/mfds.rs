@@ -31,7 +31,8 @@ ws_route! {
 		loop {
 			tokio::select! {
 				mut monitors = virtual_display.recv(&subscribed),
-					if !subscribed.is_empty() && was_aknowledged => {
+					if !subscribed.is_empty() && was_aknowledged
+				=> {
 					// send them
 					let list: Vec<_> = monitors.keys().map(|k| *k).collect();
 					if list.is_empty() {

@@ -36,8 +36,8 @@ export function subscribe(kind, fn) {
 		set.delete(fn);
 
 		if (set.size === 0) {
-			listener.delete(kind);
-			sendSubscribe(kind);
+			listeners.delete(kind);
+			ws.send(JSON.stringify({ 'Unsubscribe': kind }));
 		}
 
 		// if (listeners.size === 0)

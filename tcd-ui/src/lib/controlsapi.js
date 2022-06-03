@@ -134,7 +134,7 @@ export function subscribe(name, fn) {
 		set.delete(fn);
 
 		if (set.size === 0) {
-			listener.delete(name);
+			listeners.delete(name);
 			ws.send(JSON.stringify({ 'Unsubscribe': name }));
 		}
 
@@ -185,8 +185,19 @@ function initWs() {
 		newError('Controls stream closed');
 	});
 
+	let len = 0;
 	ws.addEventListener('message', wsMsg => {
 		const d = JSON.parse(wsMsg.data);
+
+		// if the len is zero we expect an announce message
+		if (len == 0) {
+			len = d.len;
+			return;
+		}
+
+		len--;
+		if (len == 0)
+			ws.send(JSON.stringify('Aknowledge'));
 
 		const resp = new Response(d);
 
