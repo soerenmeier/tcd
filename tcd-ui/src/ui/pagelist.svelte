@@ -76,4 +76,10 @@
 		left: 50%;
 		transform: translate(-50%, -50%);
 	}
+
+	@media (max-width: 800px) {
+		.pages {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
 </style>

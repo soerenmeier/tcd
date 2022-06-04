@@ -12,8 +12,8 @@
 	const lineLen = 24;
 	const linesLen = 5;
 
-	const charWidth = fontWidth / 2;
-	const charHeight = fontHeight / 2;
+	const charWidth = Math.floor(fontWidth / 2.5);
+	const charHeight = Math.floor(fontHeight / 2.5);
 
 	const width = lineLen * charWidth + (lineLen - 1) * gapX;
 	const height = linesLen * charHeight + (linesLen - 1) * gapY;
