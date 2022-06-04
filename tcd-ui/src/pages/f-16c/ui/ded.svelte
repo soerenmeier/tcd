@@ -1,27 +1,88 @@
 <script>
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { subscribe } from './../../../lib/controlsapi.js';
+	import DedFont, {
+		width as fontWidth,
+		height as fontHeight
+	} from './dedfont.js';
+	import Context2d from 'fire/dom/context2d.js';
+
+	const gapX = 2;
+	const gapY = 3;
+	const lineLen = 24;
+	const linesLen = 5;
+
+	const charWidth = fontWidth / 2;
+	const charHeight = fontHeight / 2;
+
+	const width = lineLen * charWidth + (lineLen - 1) * gapX;
+	const height = linesLen * charHeight + (linesLen - 1) * gapY;
 
 	let lines = [];
 	let linesUnsub = [];
+	let canvas = null;
+	let drop = false;
 
-	for (let i = 0; i < 5; i++) {
-		lines[i] = '.';
-		linesUnsub[i] = () => {};
+	for (let i = 0; i < linesLen; i++) {
+		lines[i] = [];
 
-		subscribe('DED_LINE_' + (i + 1), outs => {
+		linesUnsub[i] = subscribe('DED_LINE_' + (i + 1), outs => {
 			if (!outs)
 				return;
 
-			let line = outs.string();
-			line = line.replaceAll('a', '@');
+			let line = outs.string() ?? '';
 			lines[i] = line;
-			lines = lines;
-			console.log('lines', lines);
 		});
 	}
 
+	let ctx = null;
+
+	const font = new DedFont('ded_font.png');
+	const fontInv = new DedFont('ded_font_inv.png');
+
+	function render() {
+		if (drop)
+			return;
+
+		ctx.clearAll();
+		ctx.ctx.globalCompositeOperation = 'source-over';
+		ctx.fillStyle = '#000';
+		ctx.fillRect(0, 0, ctx.width, ctx.height);
+
+		lines.forEach((line, y) => {
+			const rY = y * charHeight + (y * gapY);
+
+			let x = 0;
+			for (let i = 0; i < line.length; (i++, x++)) {
+				const rX = x * charWidth + (x * gapX);
+				const char = line[i];
+				// escape character to inverse
+				if (char === '\r') {
+					i++;
+					fontInv.draw(ctx, line[i], rX, rY, charWidth, charHeight);
+				} else {
+					font.draw(ctx, char, rX, rY, charWidth, charHeight);
+				}
+			}
+		});
+
+		ctx.ctx.globalCompositeOperation = 'multiply';
+		ctx.fillStyle = '#34f700';
+		ctx.fillRect(0, 0, ctx.width, ctx.height);
+
+		requestAnimationFrame(render);
+	}
+
+	onMount(() => {
+		ctx = new Context2d(canvas);
+		ctx.updateSize(width, height);
+
+		requestAnimationFrame(render);
+	});
+
 	onDestroy(() => {
+		drop = true;
+
 		while (true) {
 			const unsub = linesUnsub.pop();
 			if (!unsub)
@@ -32,21 +93,5 @@
 </script>
 
 <div id="ded">
-	{#each lines as line}
-		<p class="line">{line}</p>
-	{/each}
+	<canvas bind:this={canvas}></canvas>
 </div>
-
-<style>
-	#ded {
-		width: 210px;
-		padding: 7px 0;
-		font-family: "Falcon DED", serif;
-		color: #3edd3e;
-		background-color: var(--black);
-	}
-
-	.line {
-		white-space: pre;
-	}
-</style>

@@ -100,6 +100,8 @@ impl InnerControlDefinitions {
 
 			file.insert_defs(&mut aircraft.raw_defs, &mut aircraft.defs);
 
+			aircraft.specific_fixes(name);
+
 			aircrafts.insert(name.to_string(), aircraft);
 		}
 
@@ -169,6 +171,20 @@ impl AicraftControlDefs {
 			raw_defs: RawControls::new()
 		}
 	}
+
+	fn specific_fixes(&mut self, aircraft: &str) {
+		match aircraft {
+			"F-16C_50" => {
+				// make output type of DED_LINE_1-5 DedLine
+				for i in 1..=5 {
+					let name = format!("DED_LINE_{}", i);
+					let control = self.raw_defs.get_mut(&name).unwrap();
+					control.outputs[0].kind = RawOutputKind::DedLine;
+				}
+			},
+			_ => {}
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -221,6 +237,10 @@ impl RawControls {
 
 	pub fn get(&self, name: &str) -> Option<&RawControl> {
 		self.inner.get(name)
+	}
+
+	pub fn get_mut(&mut self, name: &str) -> Option<&mut RawControl> {
+		self.inner.get_mut(name)
 	}
 
 	pub fn iter(&self) -> hash_map::Iter<String, RawControl> {
@@ -306,6 +326,7 @@ impl RawInput {
 #[serde(rename_all = "snake_case")]
 enum RawOutputKind {
 	String,
+	DedLine,
 	Integer
 }
 
@@ -327,7 +348,8 @@ impl RawOutput {
 		OutputDef {
 			description: self.description.clone(),
 			kind: match self.kind {
-				RawOutputKind::String => OutputDefKind::String {
+				RawOutputKind::String |
+				RawOutputKind::DedLine => OutputDefKind::String {
 					max_length: self.max_length.unwrap() as usize
 				},
 				RawOutputKind::Integer => OutputDefKind::Integer {
@@ -348,6 +370,29 @@ impl RawOutput {
 				std::str::from_utf8(s).ok()
 					.map(Into::into)
 					.map(Output::String)
+			},
+			RawOutputKind::DedLine => {
+				let len = self.max_length.unwrap() as usize;
+				// -4 because the last 4bytes are the inverse bits
+				let str_len = len - 4;
+				let str_bytes = data.get(..str_len)?.split(|b| *b == 0).next()?;
+
+				let mut inverse_bytes = [0u8; 4];
+				inverse_bytes.copy_from_slice(&data[str_len..len]);
+				let inverse = u32::from_le_bytes(inverse_bytes);
+
+				let mut string = String::with_capacity(str_bytes.len());
+
+				for (i, byte) in str_bytes.into_iter().enumerate() {
+					let mask = 1 << i as u32;
+					let is_inversed = (inverse & mask) > 0;
+					if is_inversed {
+						string.push('\r');
+					}
+					string.push((*byte).into());
+				}
+
+				Some(Output::String(string))
 			},
 			RawOutputKind::Integer => {
 				let mut bytes = [0u8; 2];

@@ -133,6 +133,14 @@ static_file!(BundleCss,
 	"/build/bundle.css",
 	"../../../tcd-ui/public/build/bundle.css"
 );
+static_file!(DedFont,
+	"/fonts/ded_font.png",
+	"../../../tcd-ui/public/fonts/ded_font.png"
+);
+static_file!(DedFontInv,
+	"/fonts/ded_font_inv.png",
+	"../../../tcd-ui/public/fonts/ded_font_inv.png"
+);
 
 pub(crate) fn handle(fire: &mut FireBuilder<Data>) {
 	fire.add_route(Index::new());
@@ -140,4 +148,6 @@ pub(crate) fn handle(fire: &mut FireBuilder<Data>) {
 	fire.add_route(ManifestJson::new());
 	fire.add_route(BundleJs::new());
 	fire.add_route(BundleCss::new());
+	fire.add_route(DedFont::new());
+	fire.add_route(DedFontInv::new());
 }
