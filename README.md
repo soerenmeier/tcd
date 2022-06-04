@@ -1,6 +1,20 @@
 
 # Touch Cockpit Display (TCD)
 
+## Supported resolutions
+
+### Smartphone (not fully)
+- 400x850
+
+### Small Tablet
+- 860x500
+
+### Tablet
+- 1024x768
+
+### Touch laptops and displays
+At the moment the ui is not optimal for those devices you may find that
+zooming helps.
 
 # Driver
 https://github.com/roshkins/IddSampleDriver
