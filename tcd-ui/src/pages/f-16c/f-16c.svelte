@@ -16,7 +16,7 @@
 	let activePage = null;
 
 	// debug
-	activePage = pages[1];
+	// activePage = pages[1];
 </script>
 
 {#if activePage}
