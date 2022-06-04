@@ -2,19 +2,21 @@
 	import { createEventDispatcher } from 'svelte';
 	import Mfcds from './mfcds.svelte';
 	import FlyingPeregrine from './flying-peregrine.svelte';
+	import Icp from './icp.svelte';
 	import PageList from './../../ui/pagelist.svelte';
 
 	const dispatch = createEventDispatcher();
 
 	const pages = [
 		{ name: 'MFCDS', comp: Mfcds },
+		{ name: 'ICP', comp: Icp },
 		{ name: 'Flying Peregrine', comp: FlyingPeregrine }
 	];
 
 	let activePage = null;
 
 	// debug
-	// activePage = pages[0];
+	// activePage = pages[1];
 </script>
 
 {#if activePage}
