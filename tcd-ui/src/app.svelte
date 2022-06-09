@@ -46,7 +46,8 @@
 			console.log('aircraft not found', currentAircraft);
 	});
 
-
+	// debug
+	// activePage = pages[2];
 </script>
 
 <Errors />
