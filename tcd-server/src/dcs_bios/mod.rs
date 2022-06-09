@@ -78,6 +78,8 @@ async fn stream_task(
 	let mut stream = Stream::connect().await
 		.map_err(Error::Connecting)?;
 
+	let mut previous_loaded = String::new();
+
 	eprintln!("connected to dcs bios");
 
 	loop {
@@ -95,12 +97,17 @@ async fn stream_task(
 				buf
 			);
 			let aircraft = aicraft_outputs.into_string()
-				.expect("missing aicraft");
+				.expect("missing aircraft");
 
 			let loaded = defs.load_aircraft(&aircraft);
 			if !loaded && !aircraft.is_empty() {
 				eprintln!("could not load aircraft {}", aircraft);
 				continue
+			}
+
+			if previous_loaded != aircraft {
+				eprintln!("loaded aircraft {}", aircraft);
+				previous_loaded = aircraft;
 			}
 
 			let outputs = defs.all_outputs(buf);
