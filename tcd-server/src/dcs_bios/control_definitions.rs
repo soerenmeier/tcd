@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::fs;
 
+use simple_bytes::{Bytes, BytesRead, BytesReadRef};
+
 use serde::{Serialize, Deserialize};
 
 fn control_ref() -> PathBuf {
@@ -361,11 +363,13 @@ impl RawOutput {
 
 	pub fn read(&self, buffer: &[u8]) -> Option<Output> {
 		let data = buffer.get((self.address as usize)..)?;
+		let mut bytes = Bytes::from(data);
 		match self.kind {
 			RawOutputKind::String => {
 				// how do we read a string
 				let max_len = self.max_length.unwrap() as usize;
-				let s = data.get(..max_len)?.split(|b| *b == 0).next()?;
+				let s = bytes.try_read(max_len).ok()?
+					.split(|b| *b == 0).next()?;
 
 				std::str::from_utf8(s).ok()
 					.map(Into::into)
@@ -375,11 +379,10 @@ impl RawOutput {
 				let len = self.max_length.unwrap() as usize;
 				// -4 because the last 4bytes are the inverse bits
 				let str_len = len - 4;
-				let str_bytes = data.get(..str_len)?.split(|b| *b == 0).next()?;
+				let str_bytes = bytes.try_read_ref(str_len).ok()?
+					.split(|b| *b == 0).next()?;
 
-				let mut inverse_bytes = [0u8; 4];
-				inverse_bytes.copy_from_slice(&data[str_len..len]);
-				let inverse = u32::from_le_bytes(inverse_bytes);
+				let inverse = bytes.read_le_u32();
 
 				let mut string = String::with_capacity(str_bytes.len());
 
@@ -395,9 +398,7 @@ impl RawOutput {
 				Some(Output::String(string))
 			},
 			RawOutputKind::Integer => {
-				let mut bytes = [0u8; 2];
-				bytes.copy_from_slice(data.get(..2)?);
-				let num = u16::from_le_bytes(bytes);
+				let num = bytes.read_le_u16();
 				let mask = self.mask.unwrap();
 				let shift_by = self.shift_by.unwrap();
 

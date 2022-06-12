@@ -9,12 +9,14 @@ use std::time::Duration;
 use std::time::Instant;
 use std::{thread, fs};
 use std::net::TcpStream;
-use std::io::{self, Write, Cursor, BufReader, Read};
+use std::io::{self, Write, BufReader, Read};
 use std::path::Path;
 
 use image::{RgbaImage, ImageOutputFormat};
 
 use rayon::prelude::*;
+
+use simple_bytes::{BytesOwned, BytesRead, BytesSeek, BytesWrite};
 
 use crossbeam_utils::sync::{Parker, Unparker};
 
@@ -228,12 +230,12 @@ fn connection_loop(
 		if displays_len as usize != image_buffers.len() {
 			image_buffers.resize(
 				displays_len as usize,
-				Vec::with_capacity(EXPECTED_LEN)
+				BytesOwned::with_capacity(EXPECTED_LEN)
 			);
 		}
 
 		displays.inner.par_iter().zip(&mut image_buffers)
-			.for_each(|((kind, display), image_buffer)| {
+			.for_each(|((kind, display), mut image_buffer)| {
 				let size = display.width * display.height *
 					BYTES_PER_PIXEL as u32;
 				let mut buffer = vec![0; size as usize];
@@ -241,9 +243,8 @@ fn connection_loop(
 				// now get the range from data
 				copy_display_frame(display, &data, &mut buffer);
 
-				image_buffer.resize(5, 0);
-				let mut cursor = Cursor::new(image_buffer);
-				cursor.set_position(5);
+				image_buffer.resize(5);
+				image_buffer.seek(5);
 
 				// now convert the raw bytes to a jpeg
 				let image = RgbaImage::from_vec(
@@ -253,7 +254,7 @@ fn connection_loop(
 				);
 				if let Some(image) = image {
 					let r = image.write_to(
-						&mut cursor,
+						&mut image_buffer,
 						ImageOutputFormat::Jpeg(80)
 					).map_err(Error::Image);
 					if let Err(e) = r {
@@ -262,17 +263,15 @@ fn connection_loop(
 					}
 				}
 
-				let image_buffer = cursor.into_inner();
-
+				image_buffer.seek(0);
+				image_buffer.write_u8(kind.as_u8());
 				let len = image_buffer.len() - 5;
-				image_buffer[0] = kind.as_u8();
-				let be_bytes = (len as u32).to_be_bytes();
-				image_buffer[1..5].copy_from_slice(&be_bytes);
+				image_buffer.write_u32(len as u32);
 			});
 
 		for image_buffer in &image_buffers {
 			// now send the data
-			reader.get_mut().write_all(&image_buffer)
+			reader.get_mut().write_all(image_buffer.as_slice())
 				.map_err(Error::Transmission)?;
 		}
 

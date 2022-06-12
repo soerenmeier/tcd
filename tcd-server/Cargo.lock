@@ -506,6 +506,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple-bytes"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa2918786cb2caa43531999c275e69d0ab5acf68235702aec75ad1936d9bac89"
+
+[[package]]
 name = "slab"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -540,6 +546,7 @@ dependencies = [
  "fire-http-api",
  "serde",
  "serde_json",
+ "simple-bytes",
  "tokio",
 ]
 

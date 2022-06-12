@@ -13,3 +13,4 @@ fire = { package = "fire-http", version = "0.2.11", features = ["fs", "json", "w
 http_api = { package = "fire-http-api", version = "0.1" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+simple-bytes = "0.2.11"
