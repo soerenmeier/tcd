@@ -57,7 +57,7 @@ jobs:
       - name: Build Tcd Server
         run: |
           cd tcd-server
-          cargo build --release --features "self-host"
+          cargo build --release
           xcopy target\release\tcd-server.exe ..\dist\
 
       - name: Upload

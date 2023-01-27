@@ -1,4 +1,3 @@
-
 mod virtual_display;
 use virtual_display::VirtualDisplay;
 mod api_error;
@@ -11,21 +10,9 @@ use displays::{DisplaySetup, Displays};
 #[cfg(feature = "self-host")]
 mod web_api;
 
-use fire::data_struct;
-
-data_struct! {
-	#[derive(Debug)]
-	struct Data {
-		virtual_display: VirtualDisplay,
-		display_setup: DisplaySetup,
-		control_defs: ControlDefinitions,
-		dcs_bios: DcsBios
-	}
-}
 
 #[tokio::main]
 async fn main() {
-
 	let display_setup = DisplaySetup::new();
 	// for the moment let's just hard code these values
 	display_setup.set(Some(Displays::default()));
@@ -40,14 +27,12 @@ async fn main() {
 
 	let (dcs_bios, dcs_bios_task) = DcsBios::new(control_defs.clone());
 
-	let data = Data {
-		virtual_display,
-		display_setup,
-		control_defs,
-		dcs_bios
-	};
+	let mut server = fire::build("0.0.0.0:3511").await.unwrap();
 
-	let mut server = fire::build("0.0.0.0:3511", data).unwrap();
+	server.add_data(virtual_display);
+	server.add_data(display_setup);
+	server.add_data(control_defs);
+	server.add_data(dcs_bios);
 
 	mfds::handle(&mut server);
 	dcs_bios::api::handle(&mut server);
@@ -60,9 +45,8 @@ async fn main() {
 		virtual_display_task,
 		dcs_bios_task,
 		tokio::spawn(async move {
-			server.light().await
+			server.ignite().await
 				.expect("server paniced");
 		})
 	).expect("one task failed");
 }
-

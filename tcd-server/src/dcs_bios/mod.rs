@@ -1,4 +1,3 @@
-
 pub mod api;
 mod stream;
 use stream::Stream;

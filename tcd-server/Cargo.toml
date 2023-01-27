@@ -3,14 +3,13 @@ name = "tcd-server"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-# Before you activate this features run npm run build on tcd-ui
-self-host = []
-
 [dependencies]
 tokio = { version = "1.18", features = ["rt-multi-thread", "macros", "net", "io-util"] }
-fire = { package = "fire-http", version = "0.2.11", features = ["fs", "json", "ws", "http2"] }
-http_api = { package = "fire-http-api", version = "0.1" }
+fire = { package = "fire-http", version = "0.3", features = ["fs", "json", "ws", "http2"] }
+fire-api = { package = "fire-http-api", version = "0.2" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 simple-bytes = "0.2.11"
+
+[build-dependencies]
+dunce = "1.0"

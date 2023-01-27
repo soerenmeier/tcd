@@ -1,9 +1,9 @@
-
 use std::fmt;
 
 use serde::{Serialize, Deserialize};
 
-use http_api::error::{ApiError, Error as ErrorTrait, StatusCode};
+use fire_api::error::{ApiError, Error as ErrorTrait, StatusCode};
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Error {
@@ -12,7 +12,6 @@ pub enum Error {
 }
 
 impl ApiError for Error {
-
 	fn internal<E: ErrorTrait>(e: E) -> Self {
 		Self::Internal(e.to_string())
 	}
@@ -23,11 +22,10 @@ impl ApiError for Error {
 
 	fn status_code(&self) -> StatusCode {
 		match self {
-			Self::Internal(_) => StatusCode::InternalServerError,
-			Self::Request(_) => StatusCode::BadRequest
+			Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+			Self::Request(_) => StatusCode::BAD_REQUEST
 		}
 	}
-
 }
 
 impl fmt::Display for Error {
