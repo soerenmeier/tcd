@@ -18,6 +18,8 @@ Environment:
 
 #include "Driver.h"
 #include "Driver.tmh"
+#include "Mfapi.h"
+#include "mftransform.h"
 
 using namespace std;
 using namespace Microsoft::IndirectDisp;
@@ -331,6 +333,51 @@ void SwapChainProcessor::RunCore()
 	SetDevice.pDevice = DxgiDevice.Get();
 
 	hr = IddCxSwapChainSetDevice(m_hSwapChain, &SetDevice);
+	if (FAILED(hr))
+	{
+		return;
+	}
+
+
+	ComPtr<IMFActivate*> activateRaw;
+	UINT32 activateCount = 0;
+
+	MFT_REGISTER_TYPE_INFO info = { MFMediaType_Video, MFVideoFormat_H264 };
+
+	// get the mft that enables us to encode to h264
+	hr = MFTEnumEx(
+		MFT_CATEGORY_VIDEO_ENCODER,
+		MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
+		NULL,
+		&info,
+		&activateRaw,
+		&activateCount
+	);
+	if (FAILED(hr) || activateCount == 0)
+	{
+		return;
+	}
+
+	// get the first mft device
+	ComPtr<IMFActivate> activate = activateRaw.Get()[0];
+
+	// not sure if 0 should be included
+	for (UINT32 i = 0; i < activateCount; i++)
+	{
+		activateRaw.Get()[i]->Release();
+	}
+
+	// get transform
+	ComPtr<IMFTransform> transform;
+	hr = activate->ActivateObject(IID_PPV_ARGS(&transform));
+	if (FAILED(hr))
+	{
+		return;
+	}
+
+	// get attributes
+	ComPtr<IMFAttributes> attributes;
+	hr = transform->GetAttributes(&attributes);
 	if (FAILED(hr))
 	{
 		return;
