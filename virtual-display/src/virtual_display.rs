@@ -1,6 +1,6 @@
-
 use crate::texture_buffer::TextureBuffer;
-use crate::displays::{Displays, Display};
+use crate::displays::Displays;
+use crate::yuv::{YuvData, bgra_to_yuv420};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,13 +12,16 @@ use std::net::TcpStream;
 use std::io::{self, Write, BufReader, Read};
 use std::path::Path;
 
-use image::{RgbaImage, ImageOutputFormat};
+// use image::{RgbaImage, ImageOutputFormat};
+use openh264::encoder::{EncoderConfig, Encoder, RateControlMode};
 
 use rayon::prelude::*;
 
 use simple_bytes::{BytesOwned, BytesRead, BytesSeek, BytesWrite};
 
 use crossbeam_utils::sync::{Parker, Unparker};
+
+
 
 const ADDR: &str = "127.0.0.1:5476";
 
@@ -50,10 +53,9 @@ impl VirtualDisplay {
 		thread::spawn(move || {
 			let inner = n_inner;
 			let mut parker = parker;
-			let mut displays = None;
 
 			loop {
-				let r = connection_loop(&inner, &mut parker, &mut displays);
+				let r = connection_loop(&inner, &mut parker);
 				match r {
 					Ok(_) => break,
 					// failed to connect
@@ -104,33 +106,20 @@ enum Error {
 	Connecting(io::Error),
 	Transmission(io::Error),
 	Serde(serde_json::Error),
-	Image(image::ImageError)
+	// Image(image::ImageError),
+	Encoder(openh264::Error)
 }
 
 const TOTAL_WIDTH: usize = 1920;
 const TOTAL_HEIGHT: usize = 1080;
 const BYTES_PER_PIXEL: usize = 4;
 const LEN: usize = TOTAL_WIDTH * TOTAL_HEIGHT * BYTES_PER_PIXEL;
-const EXPECTED_LEN: usize = 640 * 640 * BYTES_PER_PIXEL;
-
-fn copy_display_frame(display: &Display, data: &[u8], to: &mut [u8]) {
-	for n_y in 0..display.height {
-		let n_y = n_y as usize;
-		let m_y = display.y as usize;
-		let m_w = display.width as usize;
-
-		let r_y = m_y + n_y;
-		let r_x = display.x as usize;// end is display.width
-
-		let data_start = (r_y * TOTAL_WIDTH + r_x) * BYTES_PER_PIXEL;
-
-		let to_start = n_y * m_w * BYTES_PER_PIXEL;
-		let bytes_len = m_w * BYTES_PER_PIXEL;
-		to[to_start..(to_start + bytes_len)].copy_from_slice(
-			&data[data_start..(data_start + bytes_len)]
-		);
-	}
-}
+// ┌────┬───┬──────┐
+// │Kind│Len│ Data │
+// ├────┼───┼──────┤
+// │ 8  │32 │$Len*8│
+// └────┴───┴──────┘
+const DISPLAY_BUFFER_OFFSET: usize = 1 + 4;
 
 fn log(s: &str) {
 	let path = Path::new(r"C:\tcd\logs.txt");
@@ -149,26 +138,37 @@ fn log(s: &str) {
 
 fn connection_loop(
 	inner: &Inner,
-	parker: &mut Parker,
-	displays: &mut Option<Displays>
+	parker: &mut Parker
 ) -> Result<(), Error> {
 	let stream = TcpStream::connect(ADDR)
 		.map_err(Error::Connecting)?;
 	let mut reader = BufReader::new(stream);
 
+	let mut displays: Option<Displays> = None;
+
+	// Packet one
 	// ┌────────────┐
 	// |Displays Len│
 	// ├────────────┤
 	// │     8      │
 	// └────────────┘
-	//
+	// 
+	// Display Packets
 	// ┌────┬───┬──────┐
 	// │Kind│Len│ Data │
 	// ├────┼───┼──────┤
 	// │ 8  │32 │$Len*8│
 	// └────┴───┴──────┘
-	// reserved 5bytes
-	let mut image_buffers = vec![];
+	//
+	// Data Packet (a data packet consists of many nal)
+	// ┌─────┬──────┐
+	// │ Len │ Data │
+	// ├─────┼──────┤
+	// │ 32  │$Len*8│
+	// └─────┴──────┘
+	let mut display_buffers = vec![];
+	let mut yuv_buffers = vec![];
+	let mut encoders = vec![];
 	let mut recv_buffer = Vec::with_capacity(1024);
 
 	loop {
@@ -179,28 +179,35 @@ fn connection_loop(
 			return Ok(())
 		}
 
-		// check if we received some data
-		reader.get_mut().set_nonblocking(true)
-			.map_err(Error::Transmission)?;
-		let len = {
-			let mut bytes = [0u8; 4];
-			match reader.read_exact(&mut bytes) {
-				Ok(_) => Some(u32::from_be_bytes(bytes)),
-				Err(e) if e.kind() == io::ErrorKind::WouldBlock => None,
-				Err(e) => return Err(Error::Transmission(e))
+		let n_displays = maybe_read_new_displays(
+			&mut reader,
+			&mut recv_buffer
+		)?;
+
+		if let Some(displs) = n_displays {
+			display_buffers.resize(displs.inner.len(), BytesOwned::new());
+
+			// i know this is a bit wasteful but it shouldn't happen to often
+			// setup buffers
+			yuv_buffers.clear();
+			encoders.clear();
+			for display in displs.inner.values() {
+				let yuv_len = (display.width * display.height * 3) / 2;
+
+				yuv_buffers.push(vec![0; yuv_len as usize]);
+
+				let config = EncoderConfig::new(display.width, display.height)
+					.enable_skip_frame(true)
+					.max_frame_rate(30f32)
+					.rate_control_mode(RateControlMode::Timestamp);
+
+				let encoder = Encoder::with_config(config)
+					.map_err(Error::Encoder)?;
+
+				encoders.push(encoder);
 			}
-		};
-		reader.get_mut().set_nonblocking(false)
-			.map_err(Error::Transmission)?;
 
-		if let Some(len) = len {
-			let len = len as usize;
-			recv_buffer.resize(len, 0);
-			reader.read_exact(&mut recv_buffer[..len])
-				.map_err(Error::Transmission)?;
-
-			*displays = serde_json::from_slice(&recv_buffer[..len])
-				.map_err(Error::Serde)?;
+			displays = Some(displs);
 		}
 
 		// get some data
@@ -209,14 +216,11 @@ fn connection_loop(
 			continue
 		}
 
-		let displays = match &displays {
-			Some(displays) => displays,
-			None => {
-				// send 0 displays
-				reader.get_mut().write_all(&[0])
-					.map_err(Error::Transmission)?;
-				continue
-			}
+		let Some(displays) = &displays else {
+			// send 0 displays
+			reader.get_mut().write_all(&[0])
+				.map_err(Error::Transmission)?;
+			continue
 		};
 
 		#[cfg(feature = "log-framerate")]
@@ -227,51 +231,61 @@ fn connection_loop(
 		reader.get_mut().write_all(&[displays_len])
 			.map_err(Error::Transmission)?;
 
-		if displays_len as usize != image_buffers.len() {
-			image_buffers.resize(
-				displays_len as usize,
-				BytesOwned::with_capacity(EXPECTED_LEN)
-			);
-		}
+		displays.inner.par_iter()
+			.zip(&mut encoders)
+			.zip(&mut yuv_buffers)
+			.zip(&mut display_buffers)
+			.for_each(|(
+				(((kind, display), encoder), yuv_buffer),
+				display_buffer
+			)| {
+				let width = display.width;
+				let height = display.height;
 
-		displays.inner.par_iter().zip(&mut image_buffers)
-			.for_each(|((kind, display), mut image_buffer)| {
-				let size = display.width * display.height *
-					BYTES_PER_PIXEL as u32;
-				let mut buffer = vec![0; size as usize];
-
-				// now get the range from data
-				copy_display_frame(display, &data, &mut buffer);
-
-				image_buffer.resize(5);
-				image_buffer.seek(5);
-
-				// now convert the raw bytes to a jpeg
-				let image = RgbaImage::from_vec(
-					display.width,
-					display.height,
-					buffer
+				// convert bgra to yuv
+				bgra_to_yuv420(
+					&data,
+					TOTAL_WIDTH as u32, TOTAL_HEIGHT as u32,
+					display.x, display.y,
+					width, height,
+					yuv_buffer
 				);
-				if let Some(image) = image {
-					let r = image.write_to(
-						&mut image_buffer,
-						ImageOutputFormat::Jpeg(80)
-					).map_err(Error::Image);
-					if let Err(e) = r {
-						log(&format!("image error {:?}", e));
-						return;
+
+				let yuv = YuvData::new(yuv_buffer, width, height);
+
+				display_buffer.resize(0);
+				display_buffer.write_u8(kind.as_u8());
+				// write a temp len
+				display_buffer.write_u32(0);
+				assert_eq!(display_buffer.len(), DISPLAY_BUFFER_OFFSET);
+
+				let encoded = match encoder.encode(&yuv) {
+					Ok(e) => e,
+					Err(e) => {
+						log(&format!("encode error {:?}", e));
+						return
+					}
+				};
+
+				// write all nals
+				for layer in 0..encoded.num_layers() {
+					let layer = encoded.layer(layer).unwrap();
+					for nal in 0..layer.nal_count() {
+						let nal = layer.nal_unit(nal).unwrap();
+						display_buffer.write_u32(nal.len() as u32);
+						BytesWrite::write(display_buffer, nal);
 					}
 				}
 
-				image_buffer.seek(0);
-				image_buffer.write_u8(kind.as_u8());
-				let len = image_buffer.len() - 5;
-				image_buffer.write_u32(len as u32);
+				// write the length
+				let len = display_buffer.len() - DISPLAY_BUFFER_OFFSET;
+				display_buffer.seek(1);
+				display_buffer.write_u32(len as u32);
 			});
 
-		for image_buffer in &image_buffers {
+		for display_buffer in &display_buffers {
 			// now send the data
-			reader.get_mut().write_all(image_buffer.as_slice())
+			reader.get_mut().write_all(display_buffer.as_slice())
 				.map_err(Error::Transmission)?;
 		}
 
@@ -281,4 +295,36 @@ fn connection_loop(
 			log(&format!("display loop took: {}ms\n", took.as_millis()));
 		}
 	}
+}
+
+fn maybe_read_new_displays(
+	reader: &mut BufReader<TcpStream>,
+	recv_buffer: &mut Vec<u8>
+) -> Result<Option<Displays>, Error> {
+	// check if we received some data
+	reader.get_mut().set_nonblocking(true)
+		.map_err(Error::Transmission)?;
+	let len = {
+		let mut bytes = [0u8; 4];
+		match reader.read_exact(&mut bytes) {
+			Ok(_) => Some(u32::from_be_bytes(bytes)),
+			Err(e) if e.kind() == io::ErrorKind::WouldBlock => None,
+			Err(e) => return Err(Error::Transmission(e))
+		}
+	};
+	reader.get_mut().set_nonblocking(false)
+		.map_err(Error::Transmission)?;
+
+	let Some(len) = len else {
+		return Ok(None)
+	};
+
+	let len = len as usize;
+	recv_buffer.resize(len, 0);
+	reader.read_exact(&mut recv_buffer[..len])
+		.map_err(Error::Transmission)?;
+
+	serde_json::from_slice(&recv_buffer[..len])
+		.map(Some)
+		.map_err(Error::Serde)
 }

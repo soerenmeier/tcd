@@ -208,6 +208,7 @@
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib;virtual_display.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)..\virtual-display\target\release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>/IGNORE:4198,4010,4037,4039,4065,4070,4078,4087,4089,4098,4221,4108,4088,4218,4218,4235 %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">

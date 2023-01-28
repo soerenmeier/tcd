@@ -1,8 +1,8 @@
-
 mod texture_buffer;
 mod displays;
 mod virtual_display;
 use virtual_display::VirtualDisplay;
+mod yuv;
 
 use std::ffi::c_void;
 use std::sync::Arc;
@@ -39,7 +39,7 @@ pub extern "C" fn VdShouldSendTexture(
 	_data: *const c_void,
 	has_changed: bool
 ) -> bool {
-	// todo need to test how oftne has_changed may be returned
+	// todo need to test how often has_changed may be returned
 	has_changed
 }
 
@@ -89,11 +89,11 @@ pub extern "C" fn VdSendTexture(data: *const c_void, ptr: *mut u8, len: u32) {
 		assert_eq!(buffer.len(), len as usize);
 		assert_eq!(buffer.as_mut_ptr(), ptr);
 
-		// convert from bgra to rgba
-		// is quite fast (max around 1ms)
-		for bgra in buffer.chunks_exact_mut(4) {
-			bgra.swap(0, 2);
-		}
+		// // convert from bgra to rgba
+		// // is quite fast (max around 1ms)
+		// for bgra in buffer.chunks_exact_mut(4) {
+		// 	bgra.swap(0, 2);
+		// }
 	}
 
 	// we now are sure that we have the same data

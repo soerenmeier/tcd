@@ -10,7 +10,6 @@ crate-type = ["staticlib"]
 log-framerate = []
 
 [dependencies]
-image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
 parking_lot = "0.12"
 crossbeam-utils = "0.8"
 serde = { version = "1.0", features = ["derive"] }
@@ -18,7 +17,11 @@ serde_json = "1.0"
 rayon = "1.5"
 indexmap = { version = "1.8", features = ["serde", "rayon"] }
 simple-bytes = "0.2.11"
+openh264 = { version = "0.3", default-features = false, features = ["encoder"] }
 
 [profile.release]
 panic = "abort"
 lto = true
+
+[dev-dependencies]
+png = "0.17"
