@@ -23,7 +23,7 @@
 <div id="mfcds" bind:this={cont}>
 	<Mfcd size={maxSize} kind="LeftMfcd" name="MFD_L" />
 	<div class="splitter"></div>
-	<Mfcd size={maxSize} kind="RightMfcd" name="MFD_R" />
+	<!-- <Mfcd size={maxSize} kind="RightMfcd" name="MFD_R" /> -->
 </div>
 
 <style>

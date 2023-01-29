@@ -7,6 +7,7 @@ use fire_api::error::{ApiError, Error as ErrorTrait, StatusCode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Error {
+	DisplayNotFound,
 	Internal(String),
 	Request(String)
 }
@@ -22,6 +23,7 @@ impl ApiError for Error {
 
 	fn status_code(&self) -> StatusCode {
 		match self {
+			Self::DisplayNotFound => StatusCode::NOT_FOUND,
 			Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			Self::Request(_) => StatusCode::BAD_REQUEST
 		}

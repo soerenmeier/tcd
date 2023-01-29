@@ -2,17 +2,14 @@ use crate::texture_buffer::TextureBuffer;
 use crate::displays::Displays;
 use crate::yuv::{YuvData, bgra_to_yuv420};
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-#[cfg(feature = "log-framerate")]
 use std::time::Instant;
-use std::{thread, fs};
+use std::thread;
 use std::net::TcpStream;
 use std::io::{self, Write, BufReader, Read};
-use std::path::Path;
 
-// use image::{RgbaImage, ImageOutputFormat};
 use openh264::encoder::{EncoderConfig, Encoder, RateControlMode};
 
 use rayon::prelude::*;
@@ -36,6 +33,7 @@ pub struct VirtualDisplay {
 	// tracks if the swap chain as locked the buffer
 	has_locked: AtomicBool,
 	unparker: Unparker,
+	last_send: Mutex<Instant>,
 	inner: Arc<Inner>
 }
 
@@ -64,7 +62,7 @@ impl VirtualDisplay {
 						thread::sleep(Duration::from_secs(5));
 					},
 					Err(e) => {
-						log(&format!("connection error {:?}\n", e));
+						error!("connection error {e:?}");
 						thread::sleep(Duration::from_secs(1));
 					},
 				}
@@ -73,7 +71,8 @@ impl VirtualDisplay {
 
 		Self {
 			has_locked: AtomicBool::new(false),
-			unparker, inner
+			unparker, inner,
+			last_send: Mutex::new(Instant::now())
 		}
 	}
 
@@ -87,6 +86,16 @@ impl VirtualDisplay {
 
 	pub fn buffer(&self) -> &TextureBuffer {
 		&self.inner.buffer
+	}
+
+	pub fn time_since_last_send(&self) -> Duration {
+		self.last_send.lock().unwrap()
+			.elapsed()
+	}
+
+	pub fn update_last_send(&self) {
+		let mut timer = self.last_send.lock().unwrap();
+		*timer = Instant::now();
 	}
 
 	pub fn notify(&self) {
@@ -121,20 +130,8 @@ const LEN: usize = TOTAL_WIDTH * TOTAL_HEIGHT * BYTES_PER_PIXEL;
 // └────┴───┴──────┘
 const DISPLAY_BUFFER_OFFSET: usize = 1 + 4;
 
-fn log(s: &str) {
-	let path = Path::new(r"C:\tcd\logs.txt");
-	if !path.is_file() {
-		return;
-	}
+const FRAME_RATE: Duration = Duration::from_millis(1000 / 30);
 
-	let mut file = fs::OpenOptions::new()
-		.write(true)
-		.append(true)
-		.open(path)
-		.expect("failed to open logs.txt");
-	file.write_all(s.as_bytes())
-		.expect("failed to write to logs.txt");
-}
 
 fn connection_loop(
 	inner: &Inner,
@@ -171,6 +168,8 @@ fn connection_loop(
 	let mut encoders = vec![];
 	let mut recv_buffer = Vec::with_capacity(1024);
 
+	let mut last_frame_sent = Instant::now();
+
 	loop {
 		parker.park();
 
@@ -185,6 +184,8 @@ fn connection_loop(
 		)?;
 
 		if let Some(displs) = n_displays {
+			info!("received displays {displs:?}");
+
 			display_buffers.resize(displs.inner.len(), BytesOwned::new());
 
 			// i know this is a bit wasteful but it shouldn't happen to often
@@ -197,9 +198,7 @@ fn connection_loop(
 				yuv_buffers.push(vec![0; yuv_len as usize]);
 
 				let config = EncoderConfig::new(display.width, display.height)
-					.enable_skip_frame(true)
-					.max_frame_rate(30f32)
-					.rate_control_mode(RateControlMode::Timestamp);
+					.set_bitrate_bps(60_000);
 
 				let encoder = Encoder::with_config(config)
 					.map_err(Error::Encoder)?;
@@ -216,6 +215,10 @@ fn connection_loop(
 			continue
 		}
 
+		if last_frame_sent.elapsed() < FRAME_RATE {
+			continue
+		}
+
 		let Some(displays) = &displays else {
 			// send 0 displays
 			reader.get_mut().write_all(&[0])
@@ -223,7 +226,6 @@ fn connection_loop(
 			continue
 		};
 
-		#[cfg(feature = "log-framerate")]
 		let start = Instant::now();
 
 		// let's send how many displays we will send
@@ -231,7 +233,9 @@ fn connection_loop(
 		reader.get_mut().write_all(&[displays_len])
 			.map_err(Error::Transmission)?;
 
-		displays.inner.par_iter()
+		// todo should we remove the par iter??
+		displays.inner.iter()
+		// displays.inner.par_iter()
 			.zip(&mut encoders)
 			.zip(&mut yuv_buffers)
 			.zip(&mut display_buffers)
@@ -262,7 +266,7 @@ fn connection_loop(
 				let encoded = match encoder.encode(&yuv) {
 					Ok(e) => e,
 					Err(e) => {
-						log(&format!("encode error {:?}", e));
+						error!("encode error {e:?}");
 						return
 					}
 				};
@@ -283,16 +287,28 @@ fn connection_loop(
 				display_buffer.write_u32(len as u32);
 			});
 
+		let mut written_with_content = 0;
+
 		for display_buffer in &display_buffers {
+			let sl = display_buffer.as_slice();
+			if sl.len() > DISPLAY_BUFFER_OFFSET {
+				written_with_content += 1;
+			}
 			// now send the data
-			reader.get_mut().write_all(display_buffer.as_slice())
+			reader.get_mut().write_all(sl)
 				.map_err(Error::Transmission)?;
 		}
 
-		#[cfg(feature = "log-framerate")]
-		{
-			let took = start.elapsed();
-			log(&format!("display loop took: {}ms\n", took.as_millis()));
+		let took = start.elapsed();
+		log!("framerate", "display loop took: {}ms", took.as_millis());
+		if written_with_content > 0 {
+			let took = last_frame_sent.elapsed();
+			last_frame_sent = Instant::now();
+			log!(
+				"timepassed",
+				"{}ms passed since last frame was sent",
+				took.as_millis()
+			);
 		}
 	}
 }

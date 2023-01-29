@@ -1,131 +1,64 @@
-
-import { newError } from './errors.js';
+// import { newError } from './errors.js';
 import { getUrl } from './api.js';
+import Api from 'fire/api/api.js';
+import { timeout } from 'fire/util.js';
 
-let failed = false;
-let ws = null;
-let listeners = new Map;// Map<Kind, Set>
-let currentFrames = new Map;
+const api = new Api(getUrl('/').toString());
 
-export function subscribe(kind, fn) {
-	if (failed)
-		throw new Error('cannot subscribe websocket connection failed');
+// once you don't the stream anymore call close
+export async function newMfdWebrtc(kind, videoEl) {
+	const pc = new RTCPeerConnection({
+		iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+	});
 
-	if (listeners.has(kind)) {
-		listeners.get(kind).add(fn);
-	} else {
-		const set = new Set;
-		set.add(fn);
-		listeners.set(kind, set);
+	pc.addEventListener('track', e => {
+		console.log('on track', e);
 
-		// need to send subscribe
-		if (ws && ws.readyState === 1)
-			sendSubscribe(kind);
-		// if the connection is not ready
-		// initWs will automatically subscribe to all kinds that are in
-		// listeners
-	}
+		videoEl.srcObject = e.streams[0];
+		videoEl.autoplay = true;
+	});
 
-	fn(currentFrames.get(kind) ?? null);
+	pc.addEventListener('connectionstatechange', e => {
+		console.log('connection state change', e);
+	});
 
-	if (!ws)
-		initWs();
+	pc.addEventListener('iceconnectionstatechange', e => {
+		console.log('ice connection state change', e);
+	});
 
-	return () => {
-		let set = listeners.get(kind);
-		set.delete(fn);
+	let resolveDescProm = () => {};
+	let descProm = new Promise(res => resolveDescProm = res);
 
-		if (set.size === 0) {
-			listeners.delete(kind);
-			ws.send(JSON.stringify({ 'Unsubscribe': kind }));
-		}
+	pc.addEventListener('icecandidate', e => {
+		console.log('icecandidate');
+		if (e.candidate === null) {
+			console.log('description', pc.localDescription);
 
-		// if (listeners.size === 0)
-		// 	closeWs();
-	};
-}
+			resolveDescProm(pc.localDescription);
 
-// you need to make sure that connection is active
-function sendSubscribe(kind) {
-	ws.send(JSON.stringify({ 'Subscribe': kind }));
-}
-
-function notify(kind) {
-	const set = listeners.get(kind);
-	if (!set)
-		return;
-	set.forEach(fn => fn(currentFrames.get(kind) ?? null));
-}
-
-function initWs() {
-	let url = getUrl('/mfds');
-	url.protocol = 'ws:';
-	ws = new WebSocket(url);
-
-	ws.addEventListener('open', e => {
-		// the connection was opened
-		// we now may need to call subscribe
-		for (const kind of listeners.keys()) {
-			sendSubscribe(kind);
+			// console.log(sdp === pc.localDescription.sdp);
 		}
 	});
 
-	ws.addEventListener('close', e => {
-		ws = null;
-		failed = true;
+	pc.addTransceiver('video', { direction: 'recvonly' });
 
-		newError('Mfds stream closed');
+	const offer = await pc.createOffer({
+		offerToReceiveVideo: 1
 	});
+	// console.log('got desc', desc);
+	await pc.setLocalDescription(offer);
+	// sdp = desc.sdp;
 
-	let missingKinds = [];
-	ws.addEventListener('message', wsMsg => {
-		// we expect a frames announcement
-		if (missingKinds.length === 0) {
-			const d = JSON.parse(wsMsg.data);
-			if (typeof d !== 'object' || !('list' in d)) {
-				console.log('received unexpected message', d);
-				throw new Error('invalid message');
-			}
+	const desc = await descProm;
 
-			// reverse it so we can just call pop
-			missingKinds = d.list.reverse();
-			return;
-		}
+	// await timeout(1000);
 
-		const kind = missingKinds.pop();
+	// make the request and get the remote description
+	const resp = await api.request('POST', 'mfd', { kind, desc });
 
-		// send aknowledge if we received all kinds
-		// this tells the server it can send another frame
-		if (missingKinds.length === 0)
-			ws.send(JSON.stringify('Aknowledge'));
+	await pc.setRemoteDescription(new RTCSessionDescription(resp.desc));
 
-		// we expect it to be a jpeg blob
-		let blob = wsMsg.data;
-		blob = blob.slice(0, blob.size, 'image/jpeg');
-		const reader = new FileReader;
-		const readerLoaded = () => {
-			reader.removeEventListener('load', readerLoaded);
+	console.log('connection should be established');
 
-			const img = new Image;
-			img.src = reader.result;
-			const imgLoaded = () => {
-				img.removeEventListener('load', imgLoaded);
-
-				currentFrames.set(kind, img);
-				notify(kind);
-			};
-			img.addEventListener('load', imgLoaded);
-			
-		};
-		reader.addEventListener('load', readerLoaded);
-		reader.readAsDataURL(blob);
-	});
-}
-
-function closeWs() {
-	if (!ws)
-		return;
-
-	ws.close();
-	ws = null;
+	return pc;
 }

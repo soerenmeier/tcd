@@ -1,11 +1,12 @@
+use crate::buffers::SharedBuffer;
 
-use std::mem;
-use std::sync::Arc;
-use std::collections::{HashMap, hash_map};
+use std::sync::{Arc, Mutex};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 
-use tokio::sync::watch;
+use tokio::sync::{watch, broadcast};
 
 use serde::{Serialize, Deserialize};
+
 
 #[derive(Debug, Clone)]
 pub struct DisplaySetup {
@@ -102,37 +103,112 @@ pub struct Display {
 }
 
 #[derive(Debug, Clone)]
+pub struct SharedDisplayFrames {
+	inner: Arc<Mutex<DisplayFrames>>
+}
+
+impl SharedDisplayFrames {
+	pub fn new() -> Self {
+		Self {
+			inner: Arc::new(Mutex::new(DisplayFrames::new()))
+		}
+	}
+
+	pub fn clone_inner(&self) -> DisplayFrames {
+		self.inner.lock().unwrap().clone()
+	}
+
+	pub fn update_from_displays(&self, displays: &Displays) -> DisplayFrames {
+		let mut inner = self.inner.lock().unwrap();
+		inner.update_from_displays(displays);
+		inner.clone()
+	}
+
+	pub fn receiver(&self, kind: &DisplayKind) -> Option<FrameReceiver> {
+		self.inner.lock().unwrap()
+			.receiver(kind)
+	}
+}
+
+// normal only max 3 nals are sent at the same time
+const CHANNEL_SIZE: usize = 10;
+
+#[derive(Debug, Clone)]
 pub struct DisplayFrames {
-	inner: HashMap<DisplayKind, Vec<u8>>
+	inner: HashMap<DisplayKind, (Display, broadcast::Sender<SharedBuffer>)>
 }
 
 impl DisplayFrames {
-	pub fn new() -> Self {
+	fn new() -> Self {
 		Self {
 			inner: HashMap::new()
 		}
 	}
 
-	pub fn get(&self, kind: &DisplayKind) -> Option<&Vec<u8>> {
-		self.inner.get(kind)
-	}
+	fn update_from_displays(&mut self, displays: &Displays) {
+		let mut remove_kinds: HashSet<_> = self.inner.keys().cloned().collect();
 
-	pub fn insert(&mut self, kind: DisplayKind, buf: Vec<u8>) {
-		self.inner.insert(kind, buf);
-	}
+		for (kind, display) in &displays.inner {
+			remove_kinds.remove(kind);
 
-	pub fn keys(&self) -> hash_map::Keys<DisplayKind, Vec<u8>> {
-		self.inner.keys()
-	}
-
-	pub fn remove(&mut self, kind: &DisplayKind) -> Option<Vec<u8>> {
-		self.inner.remove(kind)
-	}
-
-	pub fn clear_and_get_buffers(&mut self, buffers: &mut Vec<Vec<u8>>) {
-		for buf in self.inner.values_mut() {
-			buffers.push(mem::take(buf));
+			match self.inner.entry(*kind) {
+				Entry::Occupied(mut occ) => {
+					// check if width or height changed
+					let (d, _) = occ.get();
+					if d.width != display.width || d.height != display.height {
+						let (tx, _) = broadcast::channel(CHANNEL_SIZE);
+						occ.insert((display.clone(), tx));
+					}
+				},
+				Entry::Vacant(vac) => {
+					let (tx, _) = broadcast::channel(CHANNEL_SIZE);
+					vac.insert((display.clone(), tx));
+				}
+			}
 		}
-		self.inner.clear();
+
+		for kind in remove_kinds {
+			self.inner.remove(&kind);
+		}
+	}
+
+	/// if the kind does not exists nothing happens
+	pub fn send_buffer(&self, kind: &DisplayKind, buffer: SharedBuffer) {
+		if let Some((_, sender)) = self.inner.get(kind) {
+			// ignore if we could send the buffer or not
+			let _ = sender.send(buffer);
+		}
+	}
+
+	pub fn receiver(&self, kind: &DisplayKind) -> Option<FrameReceiver> {
+		self.inner.get(kind)
+			.map(|(display, tx)| FrameReceiver {
+				display: display.clone(),
+				rx: tx.subscribe()
+			})
+	}
+}
+
+#[derive(Debug)]
+pub struct FrameReceiver {
+	#[allow(dead_code)]
+	display: Display,
+	rx: broadcast::Receiver<SharedBuffer>
+}
+
+impl FrameReceiver {
+	/// Returns the buffer an a lagged count
+	pub async fn recv(&mut self) -> Option<(SharedBuffer, u64)> {
+		let mut lagged = 0;
+
+		loop {
+			match self.rx.recv().await {
+				Ok(b) => return Some((b, lagged)),
+				Err(broadcast::error::RecvError::Lagged(l)) => {
+					lagged += l;
+				},
+				Err(broadcast::error::RecvError::Closed) => return None
+			}
+		}
 	}
 }

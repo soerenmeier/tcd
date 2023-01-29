@@ -13,7 +13,7 @@ fn main() {
 
 	let ui_dist = Path::new("../tcd-ui/dist");
 	if !ui_dist.is_dir() {
-		fs::write(files_routes, "pub fn add_routes(_: &mut FireBuilder) {}")
+		fs::write(files_routes, "pub fn handle(_: &mut FireBuilder) {}")
 			.unwrap();
 		return
 	}
@@ -38,7 +38,7 @@ fn main() {
 			memory_file!({uri:?}, {path:?});\n").unwrap();
 	}
 
-	write!(s, "\npub fn add_routes(fire: &mut FireBuilder) {{\n").unwrap();
+	write!(s, "\npub fn handle(fire: &mut FireBuilder) {{\n").unwrap();
 
 	// add index
 	write!(s, "\tfire.add_route(INDEX);\n").unwrap();

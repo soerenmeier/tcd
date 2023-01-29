@@ -3,15 +3,17 @@
 	import MfcdButton from './mfcd-button.svelte';
 	import Context2d from 'fire/dom/context2d.js';
 	import { timeout } from 'fire/util.js';
-	import { subscribe } from './../../../lib/mfdsapi.js';
+	import { newMfdWebrtc } from './../../../lib/mfdsapi.js';
+	import { newError } from './../../../lib/errors.js';
 
 	export let name;
 	export let size;
 	export let kind;
 
 	let cont = null;
-	let canvas = null;
+	let video = null;
 
+	let destroyed = false;
 	let unsubscribe = () => {};
 
 	const displayPadding = 2 * 10 + 2 * 40;
@@ -22,21 +24,36 @@
 		cont.style.width = s + 'px';
 		cont.style.height = s + 'px';
 
-		const ctx = new Context2d(canvas);
-		ctx.updateSize(s - displayPadding, s - displayPadding);
+		video.width = s - displayPadding;
+		video.height = s - displayPadding;
 
-		ctx.fillRect(0, 0, ctx.width, ctx.height);
+		// now create a mfd stream
+		try {
+			const pc = await newMfdWebrtc(kind, video);
+			unsubscribe = () => { pc.close() };
+			if (destroyed)
+				pc.close();
+		} catch (e) {
+			console.log('failed to create webrtc', e);
+			newError('failed to create webrtc');
+		}
 
-		unsubscribe = subscribe(kind, frame => {
-			if (!frame)
-				return;
+		// const ctx = new Context2d(canvas);
+		// ctx.updateSize(s - displayPadding, s - displayPadding);
 
-			ctx.clearAll();
-			ctx.drawImage(frame, 0, 0, ctx.width, ctx.height);
-		});
+		// ctx.fillRect(0, 0, ctx.width, ctx.height);
+
+		// unsubscribe = subscribe(kind, frame => {
+		// 	if (!frame)
+		// 		return;
+
+		// 	ctx.clearAll();
+		// 	ctx.drawImage(frame, 0, 0, ctx.width, ctx.height);
+		// });
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		unsubscribe();
 	});
 </script>
@@ -71,7 +88,7 @@
 		<MfcdButton name={name + '_16'} />
 	</div>
 
-	<canvas bind:this={canvas}></canvas>
+	<video bind:this={video}></video>
 </div>
 
 <style>
@@ -108,7 +125,7 @@
 		grid-area: 3 / 2 / 4 / 3;
 	}
 
-	canvas {
+	video {
 		display: block;
 		width: 100%;
 		height: 100%;

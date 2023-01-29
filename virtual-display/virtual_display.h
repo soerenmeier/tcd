@@ -1,5 +1,9 @@
-
 extern "C" {
+	// returns true if this kind should be logged
+	bool VdShouldLog(const char* kind);
+
+	// logs a string if a logger is enabled
+	void VdLog(const char* str);
 
 	// returns a pointer to the data
 	// this pointer should only be passed to rust
@@ -19,5 +23,4 @@ extern "C" {
 
 	// you are not allowed to call this concurrently
 	void VdSendTexture(const void* data, BYTE* ptr, DWORD len);
-
 }

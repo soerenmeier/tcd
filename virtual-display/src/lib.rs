@@ -1,11 +1,16 @@
+#![feature(once_cell)]
+
+#[macro_use]
+mod logger;
 mod texture_buffer;
 mod displays;
 mod virtual_display;
 use virtual_display::VirtualDisplay;
 mod yuv;
 
-use std::ffi::c_void;
+use std::ffi::{c_void, c_char, CStr};
 use std::sync::Arc;
+use std::time::Duration;
 
 // ## Note
 // The pointer is *const Mutex<VirtualDisplay> comming from an arc
@@ -18,6 +23,18 @@ fn data_from_ptr(data: *const c_void) -> Arc<VirtualDisplay> {
 		Arc::increment_strong_count(data);
 		Arc::from_raw(data)
 	}
+}
+
+#[no_mangle]
+pub extern "C" fn VdShouldLog(kind: *const c_char) -> bool {
+	let s = unsafe { CStr::from_ptr(kind) };
+	logger::should_log(s.to_str().unwrap())
+}
+
+#[no_mangle]
+pub extern "C" fn VdLog(s: *const c_char) {
+	let s = unsafe { CStr::from_ptr(s) };
+	logger::log(s.to_str().unwrap());
 }
 
 #[no_mangle]
@@ -34,13 +51,14 @@ pub extern "C" fn VdDestroyData(data: *const c_void) {
 	drop(data);
 }
 
+const RESEND_EVERY: Duration = Duration::from_secs(2);
+
 #[no_mangle]
 pub extern "C" fn VdShouldSendTexture(
-	_data: *const c_void,
+	data: *const c_void,
 	has_changed: bool
 ) -> bool {
-	// todo need to test how often has_changed may be returned
-	has_changed
+	has_changed || data_from_ptr(data).time_since_last_send() > RESEND_EVERY
 }
 
 #[no_mangle]
@@ -88,13 +106,10 @@ pub extern "C" fn VdSendTexture(data: *const c_void, ptr: *mut u8, len: u32) {
 
 		assert_eq!(buffer.len(), len as usize);
 		assert_eq!(buffer.as_mut_ptr(), ptr);
-
-		// // convert from bgra to rgba
-		// // is quite fast (max around 1ms)
-		// for bgra in buffer.chunks_exact_mut(4) {
-		// 	bgra.swap(0, 2);
-		// }
 	}
+
+	// set the last send counter
+	data.update_last_send();
 
 	// we now are sure that we have the same data
 	// now we can unlock

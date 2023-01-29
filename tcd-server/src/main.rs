@@ -1,3 +1,5 @@
+#![feature(once_cell)]
+
 mod virtual_display;
 use virtual_display::VirtualDisplay;
 mod api_error;
@@ -7,12 +9,31 @@ use dcs_bios::DcsBios;
 use dcs_bios::control_definitions::ControlDefinitions;
 mod displays;
 use displays::{DisplaySetup, Displays};
-#[cfg(feature = "self-host")]
-mod web_api;
+mod buffers;
+mod webrtc;
+mod cors;
+mod dist_files {
+	include!(concat!(env!("OUT_DIR"), "/dist_files.rs"));
+}
+
+use clap::Parser;
+
+
+#[derive(Parser)]
+struct Args {
+	#[clap(long)]
+	enable_cors: bool
+}
 
 
 #[tokio::main]
 async fn main() {
+	let args = Args::parse();
+
+	tracing_subscriber::fmt()
+		.with_env_filter("error,tcd_server=info")
+		.init();
+
 	let display_setup = DisplaySetup::new();
 	// for the moment let's just hard code these values
 	display_setup.set(Some(Displays::default()));
@@ -36,8 +57,10 @@ async fn main() {
 
 	mfds::handle(&mut server);
 	dcs_bios::api::handle(&mut server);
-	#[cfg(feature = "self-host")]
-	web_api::handle(&mut server);
+	dist_files::handle(&mut server);
+	if args.enable_cors {
+		cors::handle(&mut server);
+	}
 
 	eprintln!("!! Open http://127.0.0.1:3511 !!");
 

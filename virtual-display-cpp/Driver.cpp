@@ -353,6 +353,8 @@ void SwapChainProcessor::RunCore()
 		return;
 	}
 
+	UINT32 timeoutCount = 0;
+
 	// Acquire and release buffers in a loop
 	for (;;)
 	{
@@ -361,10 +363,13 @@ void SwapChainProcessor::RunCore()
 		// Ask for the next buffer from the producer
 		IDARG_OUT_RELEASEANDACQUIREBUFFER Buffer = {};
 		hr = IddCxSwapChainReleaseAndAcquireBuffer(m_hSwapChain, &Buffer);
+		bool hasNewBuffer = true;
 
 		// AcquireBuffer immediately returns STATUS_PENDING if no buffer is yet available
 		if (hr == E_PENDING)
 		{
+			hasNewBuffer = false;
+
 			// We must wait for a new buffer
 			HANDLE WaitHandles[] =
 			{
@@ -372,10 +377,24 @@ void SwapChainProcessor::RunCore()
 				m_hTerminateEvent.Get()
 			};
 			DWORD WaitResult = WaitForMultipleObjects(ARRAYSIZE(WaitHandles), WaitHandles, FALSE, 16);
-			if (WaitResult == WAIT_OBJECT_0 || WaitResult == WAIT_TIMEOUT)
+			if (WaitResult == WAIT_OBJECT_0)
 			{
 				// We have a new buffer, so try the AcquireBuffer again
 				continue;
+			}
+			else if (WaitResult == WAIT_TIMEOUT)
+			{
+				timeoutCount += 1;
+
+				// if not 30frames passed wait another frame
+				if (timeoutCount < 30)
+				{
+					continue;
+				}
+
+				// 30 frames passed and we still haven't received a new frame
+				// we wan't to give the virtual display the opportunity to render again
+				// so we don't continue
 			}
 			else if (WaitResult == WAIT_OBJECT_0 + 1)
 			{
@@ -394,26 +413,37 @@ void SwapChainProcessor::RunCore()
 			// The swap-chain was likely abandoned (e.g. DXGI_ERROR_ACCESS_LOST), so exit the processing loop
 			break;
 		}
+		timeoutCount = 0;
 
 		// We have new frame to process, the surface has a reference on it that the driver has to release
-		AcquiredBuffer.Attach(Buffer.MetaData.pSurface);
+		if (hasNewBuffer)
+		{
+			AcquiredBuffer.Attach(Buffer.MetaData.pSurface);
+		}
+		// we haven't got any buffer we can't do anything
+		else if (StagingTexture == NULL)
+		{
+			continue;
+		}
 
-		bool HasChanged = Buffer.MetaData.DirtyRectCount > 0 || Buffer.MetaData.MoveRegionCount > 0;
+		bool HasChanged = hasNewBuffer && (Buffer.MetaData.DirtyRectCount > 0 || Buffer.MetaData.MoveRegionCount > 0);
 
 		if (VdShouldSendTexture(pVdData, HasChanged))
 		{
-
-			// create a Texture2D
-			ID3D11Texture2D *FrameTexture2d;
-			hr = AcquiredBuffer.Get()->QueryInterface(__uuidof(ID3D11Texture2D), (void **)&FrameTexture2d);
-			if (FAILED(hr))
+			if (hasNewBuffer)
 			{
-				break;
+				// create a Texture2D
+				ID3D11Texture2D *FrameTexture2d;
+				hr = AcquiredBuffer.Get()->QueryInterface(__uuidof(ID3D11Texture2D), (void **)&FrameTexture2d);
+				if (FAILED(hr))
+				{
+					break;
+				}
+
+				m_Device->DeviceContext->CopyResource(StagingTexture, FrameTexture2d);
 			}
 
 			D3D11_MAPPED_SUBRESOURCE Mapped;
-
-			m_Device->DeviceContext->CopyResource(StagingTexture, FrameTexture2d);
 
 			hr = m_Device->DeviceContext->Map(StagingTexture, 0, D3D11_MAP_READ, 0, &Mapped);
 			if (FAILED(hr))
@@ -443,21 +473,24 @@ void SwapChainProcessor::RunCore()
 
 		}
 
-		// We have finished processing this frame hence we release the reference on it.
-		// If the driver forgets to release the reference to the surface, it will be leaked which results in the
-		// surfaces being left around after swapchain is destroyed.
-		// NOTE: Although in this sample we release reference to the surface here; the driver still
-		// owns the Buffer.MetaData.pSurface surface until IddCxSwapChainReleaseAndAcquireBuffer returns
-		// S_OK and gives us a new frame, a driver may want to use the surface in future to re-encode the desktop 
-		// for better quality if there is no new frame for a while
-		AcquiredBuffer.Reset();
-
-		// Indicate to OS that we have finished inital processing of the frame, it is a hint that
-		// OS could start preparing another frame
-		hr = IddCxSwapChainFinishedProcessingFrame(m_hSwapChain);
-		if (FAILED(hr))
+		if (hasNewBuffer)
 		{
-			break;
+			// We have finished processing this frame hence we release the reference on it.
+			// If the driver forgets to release the reference to the surface, it will be leaked which results in the
+			// surfaces being left around after swapchain is destroyed.
+			// NOTE: Although in this sample we release reference to the surface here; the driver still
+			// owns the Buffer.MetaData.pSurface surface until IddCxSwapChainReleaseAndAcquireBuffer returns
+			// S_OK and gives us a new frame, a driver may want to use the surface in future to re-encode the desktop 
+			// for better quality if there is no new frame for a while
+			AcquiredBuffer.Reset();
+
+			// Indicate to OS that we have finished inital processing of the frame, it is a hint that
+			// OS could start preparing another frame
+			hr = IddCxSwapChainFinishedProcessingFrame(m_hSwapChain);
+			if (FAILED(hr))
+			{
+				break;
+			}
 		}
 
 		// ==============================
