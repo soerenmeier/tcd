@@ -1,6 +1,6 @@
 use crate::texture_buffer::TextureBuffer;
 use crate::displays::Displays;
-use crate::yuv::{YuvData, bgra_to_yuv420};
+use crate::yuv::bgra_to_yuv420;
 
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,9 +10,7 @@ use std::thread;
 use std::net::TcpStream;
 use std::io::{self, Write, BufReader, Read};
 
-use openh264::encoder::{EncoderConfig, Encoder, RateControlMode};
-
-use rayon::prelude::*;
+// use rayon::prelude::*;
 
 use simple_bytes::{BytesOwned, BytesRead, BytesSeek, BytesWrite};
 
@@ -114,9 +112,7 @@ impl Drop for VirtualDisplay {
 enum Error {
 	Connecting(io::Error),
 	Transmission(io::Error),
-	Serde(serde_json::Error),
-	// Image(image::ImageError),
-	Encoder(openh264::Error)
+	Serde(serde_json::Error)
 }
 
 const TOTAL_WIDTH: usize = 1920;
@@ -156,16 +152,7 @@ fn connection_loop(
 	// ├────┼───┼──────┤
 	// │ 8  │32 │$Len*8│
 	// └────┴───┴──────┘
-	//
-	// Data Packet (a data packet consists of many nal)
-	// ┌─────┬──────┐
-	// │ Len │ Data │
-	// ├─────┼──────┤
-	// │ 32  │$Len*8│
-	// └─────┴──────┘
 	let mut display_buffers = vec![];
-	let mut yuv_buffers = vec![];
-	let mut encoders = vec![];
 	let mut recv_buffer = Vec::with_capacity(1024);
 
 	let mut last_frame_sent = Instant::now();
@@ -186,24 +173,11 @@ fn connection_loop(
 		if let Some(displs) = n_displays {
 			info!("received displays {displs:?}");
 
-			display_buffers.resize(displs.inner.len(), BytesOwned::new());
-
-			// i know this is a bit wasteful but it shouldn't happen to often
-			// setup buffers
-			yuv_buffers.clear();
-			encoders.clear();
+			display_buffers.clear();
 			for display in displs.inner.values() {
 				let yuv_len = (display.width * display.height * 3) / 2;
-
-				yuv_buffers.push(vec![0; yuv_len as usize]);
-
-				let config = EncoderConfig::new(display.width, display.height)
-					.set_bitrate_bps(60_000);
-
-				let encoder = Encoder::with_config(config)
-					.map_err(Error::Encoder)?;
-
-				encoders.push(encoder);
+				let size = DISPLAY_BUFFER_OFFSET + yuv_len as usize;
+				display_buffers.push(BytesOwned::with_capacity(size));
 			}
 
 			displays = Some(displs);
@@ -236,15 +210,20 @@ fn connection_loop(
 		// todo should we remove the par iter??
 		displays.inner.iter()
 		// displays.inner.par_iter()
-			.zip(&mut encoders)
-			.zip(&mut yuv_buffers)
 			.zip(&mut display_buffers)
-			.for_each(|(
-				(((kind, display), encoder), yuv_buffer),
-				display_buffer
-			)| {
+			.for_each(|((kind, display), display_buffer)| {
 				let width = display.width;
 				let height = display.height;
+
+
+
+				let yuv_len = (display.width * display.height * 3) / 2;
+				display_buffer.resize(DISPLAY_BUFFER_OFFSET + yuv_len as usize);
+
+				display_buffer.seek(0);
+				display_buffer.write_u8(kind.as_u8());
+				// write a temp len
+				display_buffer.write_u32(yuv_len);
 
 				// convert bgra to yuv
 				bgra_to_yuv420(
@@ -252,64 +231,25 @@ fn connection_loop(
 					TOTAL_WIDTH as u32, TOTAL_HEIGHT as u32,
 					display.x, display.y,
 					width, height,
-					yuv_buffer
+					display_buffer.remaining_mut()
 				);
-
-				let yuv = YuvData::new(yuv_buffer, width, height);
-
-				display_buffer.resize(0);
-				display_buffer.write_u8(kind.as_u8());
-				// write a temp len
-				display_buffer.write_u32(0);
-				assert_eq!(display_buffer.len(), DISPLAY_BUFFER_OFFSET);
-
-				let encoded = match encoder.encode(&yuv) {
-					Ok(e) => e,
-					Err(e) => {
-						error!("encode error {e:?}");
-						return
-					}
-				};
-
-				// write all nals
-				for layer in 0..encoded.num_layers() {
-					let layer = encoded.layer(layer).unwrap();
-					for nal in 0..layer.nal_count() {
-						let nal = layer.nal_unit(nal).unwrap();
-						display_buffer.write_u32(nal.len() as u32);
-						BytesWrite::write(display_buffer, nal);
-					}
-				}
-
-				// write the length
-				let len = display_buffer.len() - DISPLAY_BUFFER_OFFSET;
-				display_buffer.seek(1);
-				display_buffer.write_u32(len as u32);
 			});
 
-		let mut written_with_content = 0;
-
 		for display_buffer in &display_buffers {
-			let sl = display_buffer.as_slice();
-			if sl.len() > DISPLAY_BUFFER_OFFSET {
-				written_with_content += 1;
-			}
 			// now send the data
-			reader.get_mut().write_all(sl)
+			reader.get_mut().write_all(display_buffer.as_slice())
 				.map_err(Error::Transmission)?;
 		}
 
 		let took = start.elapsed();
-		log!("framerate", "display loop took: {}ms", took.as_millis());
-		if written_with_content > 0 {
-			let took = last_frame_sent.elapsed();
-			last_frame_sent = Instant::now();
-			log!(
-				"timepassed",
-				"{}ms passed since last frame was sent",
-				took.as_millis()
-			);
-		}
+		let took_last = last_frame_sent.elapsed();
+		last_frame_sent = Instant::now();
+		log!(
+			"framerate",
+			"display loop took: {}ms, since last frame {}ms",
+			took.as_millis(),
+			took_last.as_millis()
+		);
 	}
 }
 

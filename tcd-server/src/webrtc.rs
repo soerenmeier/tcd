@@ -3,11 +3,16 @@
 // use twcc_interceptor::TwccInterceptor;
 
 use crate::displays::FrameReceiver;
+use crate::buffers::Buffer;
 
+use std::mem;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
+use tokio::task::spawn_blocking;
+
+use simple_bytes::{BytesWrite, BytesRead};
 
 use webrtc::api::interceptor_registry::{
 	configure_nack, configure_rtcp_reports, configure_twcc
@@ -32,11 +37,18 @@ use webrtc::track::track_local::track_local_static_sample::{
 use webrtc::track::track_local::TrackLocal;
 use webrtc::stats::StatsReportType;
 
+use openh264::encoder::{EncoderConfig, Encoder, RateControlMode};
+use openh264::formats::YUVSource;
+
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("webrtc error")]
-	WebrtcError(#[from] webrtc::Error)
+	WebrtcError(#[from] webrtc::Error),
+	#[error("open h264 error")]
+	Encoder(#[from] openh264::Error),
+	#[error("blocking task failed")]
+	JoinError(#[from] tokio::task::JoinError)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,12 +115,16 @@ impl Webrtc {
 		tokio::spawn(async move {
 			eprintln!("start frame task");
 
-			frame_task(
+			let r = frame_task(
 				frames,
 				video_track,
 				n_peer_connection,
 				state_rx
 			).await;
+
+			if let Err(e) = r {
+				tracing::error!("frame task error {e:?}");
+			}
 
 			eprintln!("frame task closed");
 		});
@@ -187,17 +203,19 @@ impl Connection {
 // every x frames
 const GATHER_STATS_EVERY: usize = 15;
 
+const FRAME_RATE: Duration = Duration::from_millis(1000 / 30);
+
 async fn frame_task(
 	mut frames: FrameReceiver,
 	track: Arc<TrackLocalStaticSample>,
 	peer_connection: Arc<RTCPeerConnection>,
 	mut state_rx: mpsc::Receiver<State>
-) {
+) -> Result<(), Error> {
 	// let's wait until the connection is established
 	match state_rx.recv().await {
 		Some(State::Connected) => {},
 		Some(State::Disconnected) |
-		None => return
+		None => return Ok(())
 	};
 
 	eprintln!("start frame handling");
@@ -206,10 +224,26 @@ async fn frame_task(
 	let mut gather_stats_in = 0;
 	let mut stats;
 
-	let mut last_sample = Instant::now();
+	let display = frames.display();
+	let config = EncoderConfig::new(display.width, display.height)
+		.set_bitrate_bps(60_000);
+
+	let mut encoder = Encoder::with_config(config)
+		.map_err(Error::Encoder)?;
+
+
+
+	// let mut last_yuv = None;
+	let mut last_sample_sent = Instant::now();
+	let mut nals = vec![];
+	// let mut bytes = BytesMut::new();
+	// let mut interval = interval(FRAME_RATE).await;
+	// interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
 	// let's try to get some information
 	loop {
+		// interval.tick().await;
+
 		if gather_stats_in == 0 {
 			stats = peer_connection.get_stats().await;
 			// for (key, stat) in stats.reports {
@@ -231,14 +265,18 @@ async fn frame_task(
 		match state_rx.try_recv() {
 			Ok(State::Connected) => unreachable!(),
 			Ok(State::Disconnected) |
-			Err(mpsc::error::TryRecvError::Disconnected) => return,
+			Err(mpsc::error::TryRecvError::Disconnected) => return Ok(()),
 			Err(mpsc::error::TryRecvError::Empty) => {}
 		}
+
+		// let bytes = match frames.try_recv() {
+
+		// }
 
 		let Some((buffer, missed_nals)) = frames.recv().await else {
 			eprintln!("display closed no more nals");
 			// we will not receive any frames
-			return
+			return Ok(())
 		};
 
 		tracing::info!("sent buffer");
@@ -247,15 +285,101 @@ async fn frame_task(
 			eprintln!("received nals to late, missed {missed_nals:?}");
 		}
 
-		let sample = Sample {
-			data: buffer.into_bytes(),
-			duration: last_sample.elapsed(),
-			..Default::default()
-		};
+		let display = frames.display().clone();
+		
 
-		if let Err(e) = track.write_sample(&sample).await {
-			eprintln!("could not write sample {e:?}");
+		let mut n_nals = mem::take(&mut nals);
+		(encoder, nals) = spawn_blocking(move || {
+			let yuv = YuvData::new(
+				buffer.as_slice(),
+				display.width,
+				display.height
+			);
+
+			let encoded = encoder.encode(&yuv)?;
+
+			// write all nals
+			for layer in 0..encoded.num_layers() {
+				let layer = encoded.layer(layer).unwrap();
+				for nal in 0..layer.nal_count() {
+					let nal = layer.nal_unit(nal).unwrap();
+
+					// write the nal
+					let mut buffer = Buffer::new();
+					buffer.write(nal);
+
+					n_nals.push(buffer.into_shared().into_bytes());
+				}
+			}
+
+			Ok::<_, Error>((encoder, n_nals))
+		}).await??;
+
+		// write all nals
+		for nal in nals.drain(..) {
+			let sample = Sample {
+				data: nal,
+				duration: last_sample_sent.elapsed(),
+				..Default::default()
+			};
+
+			track.write_sample(&sample).await?;
 		}
-		last_sample = Instant::now();
+
+		last_sample_sent = Instant::now();
+	}
+}
+
+struct YuvData<'a> {
+	inner: &'a [u8],
+	width: u32,
+	height: u32
+}
+
+impl<'a> YuvData<'a> {
+	pub fn new(inner: &'a [u8], width: u32, height: u32) -> Self {
+		assert_eq!(inner.len() as u32, (width * height * 3) / 2);
+
+		Self { inner, width, height }
+	}
+
+	fn frame_size(&self) -> usize {
+		self.width as usize * self.height as usize
+	}
+}
+
+impl YUVSource for YuvData<'_> {
+	fn width(&self) -> i32 {
+		self.width as i32
+	}
+
+	fn height(&self) -> i32 {
+		self.height as i32
+	}
+
+	fn y(&self) -> &[u8] {
+		&self.inner[..self.frame_size()]
+	}
+
+	fn u(&self) -> &[u8] {
+		let fs = self.frame_size();
+		&self.inner[fs..][..fs / 4]
+	}
+
+	fn v(&self) -> &[u8] {
+		let fs = self.frame_size();
+		&self.inner[(fs + fs / 4)..]
+	}
+
+	fn y_stride(&self) -> i32 {
+		self.width as i32
+	}
+
+	fn u_stride(&self) -> i32 {
+		(self.width / 2) as i32
+	}
+
+	fn v_stride(&self) -> i32 {
+		(self.width / 2) as i32
 	}
 }

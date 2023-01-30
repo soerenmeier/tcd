@@ -10,7 +10,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{BufReader, AsyncReadExt, AsyncWriteExt};
 use tokio::task::JoinHandle;
 
-use simple_bytes::{Bytes, BytesRead};
+use simple_bytes::{Bytes, BytesRead, BytesWrite};
 
 
 const ADDR: &str = "127.0.0.1:5476";
@@ -89,7 +89,6 @@ async fn handle_stream(
 	let mut frames = shared_frames.clone_inner();
 
 	let mut sent_displays = false;
-	let mut read_buf = vec![];
 
 	loop {
 		let has_changed = display_setup.has_changed() || !sent_displays;
@@ -140,30 +139,14 @@ async fn handle_stream(
 				continue
 			}
 
-			read_buf.resize(len, 0);
+			let mut buffer = Buffer::new();
+			buffer.resize(len);
 
-			reader.read_exact(&mut read_buf[..len]).await?;
+			reader.read_exact(buffer.as_mut()).await?;
 
-			let mut bytes = Bytes::from(read_buf.as_slice());
+			frames.send_buffer(&kind, buffer.into_shared());
 
-			let mut nal_count = 0;
-			while !bytes.remaining().is_empty() {
-				let len = bytes.try_read_u32()
-					.map_err(|e| io_other!(format!("proto error {e:?}")))?;
-				let nal = bytes.try_read(len as usize)
-					.map_err(|e| io_other!(format!("proto error {e:?}")))?;
-
-				let mut buffer = Buffer::new();
-				buffer.as_mut_vec().extend_from_slice(nal);
-				frames.send_buffer(&kind, buffer.into_shared());
-
-				tracing::info!("received buffer");
-
-				nal_count += 1;
-			}
-
-			// max was 3
-			// eprintln!("received {kind:?} {nal_count:?} nals with a len of {len:?}");
+			tracing::info!("received buffer");
 		}
 	}
 }

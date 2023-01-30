@@ -130,8 +130,8 @@ impl SharedDisplayFrames {
 	}
 }
 
-// normal only max 3 nals are sent at the same time
-const CHANNEL_SIZE: usize = 10;
+// we should receive a yuv maximaly 30 times per second
+const CHANNEL_SIZE: usize = 1;
 
 #[derive(Debug, Clone)]
 pub struct DisplayFrames {
@@ -197,6 +197,10 @@ pub struct FrameReceiver {
 }
 
 impl FrameReceiver {
+	pub fn display(&self) -> &Display {
+		&self.display
+	}
+
 	/// Returns the buffer an a lagged count
 	pub async fn recv(&mut self) -> Option<(SharedBuffer, u64)> {
 		let mut lagged = 0;

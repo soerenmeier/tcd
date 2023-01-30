@@ -16,6 +16,7 @@ thiserror = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+openh264 = { version = "0.3", default-features = false, features = ["encoder"] }
 
 [build-dependencies]
 dunce = "1.0"

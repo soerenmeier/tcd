@@ -47,6 +47,8 @@ impl Buffers {
 		let mut inner = self.inner.lock().unwrap();
 		if inner.len() < self.max_cap {
 			inner.push(bytes);
+		} else {
+			tracing::info!("already enough buffers");
 		}
 	}
 }
