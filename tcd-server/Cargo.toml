@@ -22,7 +22,7 @@ openh264 = { version = "0.3", default-features = false, features = ["encoder"] }
 dunce = "1.0"
 
 [patch.crates-io]
-bytes = { git = 'https://github.com/soerenmeier/tokio-bytes' }
+bytes = { git = "https://github.com/soerenmeier/tokio-bytes" }
 
 [profile.release]
 lto = true

@@ -9,6 +9,7 @@ use dcs_bios::DcsBios;
 use dcs_bios::control_definitions::ControlDefinitions;
 mod displays;
 use displays::{DisplaySetup, Displays};
+mod latest;
 mod buffers;
 mod webrtc;
 mod cors;

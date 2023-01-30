@@ -1,5 +1,7 @@
 use crate::buffers::SharedBuffer;
+use crate::latest::Latest;
 
+use std::time::Instant;
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 
@@ -135,7 +137,7 @@ const CHANNEL_SIZE: usize = 1;
 
 #[derive(Debug, Clone)]
 pub struct DisplayFrames {
-	inner: HashMap<DisplayKind, (Display, broadcast::Sender<SharedBuffer>)>
+	inner: HashMap<DisplayKind, (Display, Latest<(Instant, SharedBuffer)>)>
 }
 
 impl DisplayFrames {
@@ -156,13 +158,19 @@ impl DisplayFrames {
 					// check if width or height changed
 					let (d, _) = occ.get();
 					if d.width != display.width || d.height != display.height {
-						let (tx, _) = broadcast::channel(CHANNEL_SIZE);
-						occ.insert((display.clone(), tx));
+						let latest = Latest::new((
+							Instant::now(),
+							SharedBuffer::new()
+						));
+						occ.insert((display.clone(), latest));
 					}
 				},
 				Entry::Vacant(vac) => {
-					let (tx, _) = broadcast::channel(CHANNEL_SIZE);
-					vac.insert((display.clone(), tx));
+					let latest = Latest::new((
+						Instant::now(),
+						SharedBuffer::new()
+					));
+					vac.insert((display.clone(), latest));
 				}
 			}
 		}
@@ -173,27 +181,31 @@ impl DisplayFrames {
 	}
 
 	/// if the kind does not exists nothing happens
-	pub fn send_buffer(&self, kind: &DisplayKind, buffer: SharedBuffer) {
-		if let Some((_, sender)) = self.inner.get(kind) {
+	pub fn send_buffer(
+		&self,
+		kind: &DisplayKind,
+		inst: Instant,
+		buffer: SharedBuffer
+	) {
+		if let Some((_, latest)) = self.inner.get(kind) {
 			// ignore if we could send the buffer or not
-			let _ = sender.send(buffer);
+			let _ = latest.update((inst, buffer));
 		}
 	}
 
 	pub fn receiver(&self, kind: &DisplayKind) -> Option<FrameReceiver> {
 		self.inner.get(kind)
-			.map(|(display, tx)| FrameReceiver {
+			.map(|(display, latest)| FrameReceiver {
 				display: display.clone(),
-				rx: tx.subscribe()
+				latest: latest.clone()
 			})
 	}
 }
 
 #[derive(Debug)]
 pub struct FrameReceiver {
-	#[allow(dead_code)]
 	display: Display,
-	rx: broadcast::Receiver<SharedBuffer>
+	latest: Latest<(Instant, SharedBuffer)>
 }
 
 impl FrameReceiver {
@@ -201,18 +213,38 @@ impl FrameReceiver {
 		&self.display
 	}
 
-	/// Returns the buffer an a lagged count
-	pub async fn recv(&mut self) -> Option<(SharedBuffer, u64)> {
-		let mut lagged = 0;
-
-		loop {
-			match self.rx.recv().await {
-				Ok(b) => return Some((b, lagged)),
-				Err(broadcast::error::RecvError::Lagged(l)) => {
-					lagged += l;
-				},
-				Err(broadcast::error::RecvError::Closed) => return None
-			}
-		}
+	pub fn latest(&mut self) -> Option<(Instant, SharedBuffer)> {
+		self.latest.latest()
 	}
+
+	// // the first option means if the receiver is still alive
+	// pub fn try_recv(&mut self) -> Option<Option<(SharedBuffer, u64)>> {
+	// 	let mut lagged = 0;
+
+	// 	loop {
+	// 		match self.rx.try_recv() {
+	// 			Ok(b) => return Some(Some((b, lagged))),
+	// 			Err(broadcast::error::TryRecvError::Empty) => return Some(None),
+	// 			Err(broadcast::error::TryRecvError::Lagged(l)) => {
+	// 				lagged += l;
+	// 			},
+	// 			Err(broadcast::error::TryRecvError::Closed) => return None
+	// 		}
+	// 	}
+	// }
+
+	// /// Returns the buffer an a lagged count
+	// pub async fn recv(&mut self) -> Option<(SharedBuffer, u64)> {
+	// 	let mut lagged = 0;
+
+	// 	loop {
+	// 		match self.rx.recv().await {
+	// 			Ok(b) => return Some((b, lagged)),
+	// 			Err(broadcast::error::RecvError::Lagged(l)) => {
+	// 				lagged += l;
+	// 			},
+	// 			Err(broadcast::error::RecvError::Closed) => return None
+	// 		}
+	// 	}
+	// }
 }

@@ -10,7 +10,7 @@ use std::thread;
 use std::net::TcpStream;
 use std::io::{self, Write, BufReader, Read};
 
-// use rayon::prelude::*;
+use rayon::prelude::*;
 
 use simple_bytes::{BytesOwned, BytesRead, BytesSeek, BytesWrite};
 
@@ -126,9 +126,6 @@ const LEN: usize = TOTAL_WIDTH * TOTAL_HEIGHT * BYTES_PER_PIXEL;
 // └────┴───┴──────┘
 const DISPLAY_BUFFER_OFFSET: usize = 1 + 4;
 
-const FRAME_RATE: Duration = Duration::from_millis(1000 / 30);
-
-
 fn connection_loop(
 	inner: &Inner,
 	parker: &mut Parker
@@ -189,10 +186,6 @@ fn connection_loop(
 			continue
 		}
 
-		if last_frame_sent.elapsed() < FRAME_RATE {
-			continue
-		}
-
 		let Some(displays) = &displays else {
 			// send 0 displays
 			reader.get_mut().write_all(&[0])
@@ -208,14 +201,12 @@ fn connection_loop(
 			.map_err(Error::Transmission)?;
 
 		// todo should we remove the par iter??
-		displays.inner.iter()
-		// displays.inner.par_iter()
+		// displays.inner.iter()
+		displays.inner.par_iter()
 			.zip(&mut display_buffers)
 			.for_each(|((kind, display), display_buffer)| {
 				let width = display.width;
 				let height = display.height;
-
-
 
 				let yuv_len = (display.width * display.height * 3) / 2;
 				display_buffer.resize(DISPLAY_BUFFER_OFFSET + yuv_len as usize);

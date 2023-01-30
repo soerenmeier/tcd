@@ -350,6 +350,7 @@ dependencies = [
  "indexmap",
  "parking_lot",
  "png",
+ "rayon",
  "serde",
  "serde_json",
  "simple-bytes",

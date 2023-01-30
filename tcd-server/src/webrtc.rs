@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
+use tokio::time::{interval, MissedTickBehavior};
 
 use simple_bytes::{BytesWrite, BytesRead};
 
@@ -203,7 +204,7 @@ impl Connection {
 // every x frames
 const GATHER_STATS_EVERY: usize = 15;
 
-const FRAME_RATE: Duration = Duration::from_millis(1000 / 30);
+const FRAME_RATE: Duration = Duration::from_millis(1000 / 60);
 
 async fn frame_task(
 	mut frames: FrameReceiver,
@@ -226,7 +227,7 @@ async fn frame_task(
 
 	let display = frames.display();
 	let config = EncoderConfig::new(display.width, display.height)
-		.set_bitrate_bps(60_000);
+		.set_bitrate_bps(40_000);
 
 	let mut encoder = Encoder::with_config(config)
 		.map_err(Error::Encoder)?;
@@ -237,12 +238,12 @@ async fn frame_task(
 	let mut last_sample_sent = Instant::now();
 	let mut nals = vec![];
 	// let mut bytes = BytesMut::new();
-	// let mut interval = interval(FRAME_RATE).await;
-	// interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+	let mut interval = interval(FRAME_RATE);
+	interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
 	// let's try to get some information
 	loop {
-		// interval.tick().await;
+		interval.tick().await;
 
 		if gather_stats_in == 0 {
 			stats = peer_connection.get_stats().await;
@@ -269,24 +270,24 @@ async fn frame_task(
 			Err(mpsc::error::TryRecvError::Empty) => {}
 		}
 
-		// let bytes = match frames.try_recv() {
+		let Some((_, buffer)) = frames.latest() else {
+			// need to send a sample then continue
+			let took = last_sample_sent.elapsed();
+			last_sample_sent = Instant::now();
 
-		// }
+			let sample = Sample {
+				data: bytes::Bytes::new(),
+				duration: took,
+				..Default::default()
+			};
 
-		let Some((buffer, missed_nals)) = frames.recv().await else {
-			eprintln!("display closed no more nals");
-			// we will not receive any frames
-			return Ok(())
+			track.write_sample(&sample).await?;
+			continue
 		};
 
-		tracing::info!("sent buffer");
-
-		if missed_nals > 0 {
-			eprintln!("received nals to late, missed {missed_nals:?}");
-		}
-
 		let display = frames.display().clone();
-		
+
+		let start_computing = Instant::now();		
 
 		let mut n_nals = mem::take(&mut nals);
 		(encoder, nals) = spawn_blocking(move || {
@@ -315,11 +316,15 @@ async fn frame_task(
 			Ok::<_, Error>((encoder, n_nals))
 		}).await??;
 
+		let took = last_sample_sent.elapsed();
+		let computing_took = start_computing.elapsed();
+		tracing::debug!("computing took {}ms", computing_took.as_millis());
+
 		// write all nals
 		for nal in nals.drain(..) {
 			let sample = Sample {
 				data: nal,
-				duration: last_sample_sent.elapsed(),
+				duration: took,
 				..Default::default()
 			};
 

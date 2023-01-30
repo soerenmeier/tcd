@@ -95,6 +95,14 @@ impl DerefMut for Buffer<'_> {
 pub struct SharedBuffer(Arc<Buffer<'static>>);
 
 impl SharedBuffer {
+	// Creates an empty Buffer
+	pub fn new() -> Self {
+		Self(Arc::new(Buffer {
+			inner: &BUFFERS,
+			bytes: BytesOwned::new()
+		}))
+	}
+
 	pub fn into_bytes(self) -> bytes::Bytes {
 		let slice = self.0.bytes.as_slice();
 		let ptr = slice.as_ptr() as *const _;

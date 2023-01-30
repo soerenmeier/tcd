@@ -37,19 +37,6 @@
 			console.log('failed to create webrtc', e);
 			newError('failed to create webrtc');
 		}
-
-		// const ctx = new Context2d(canvas);
-		// ctx.updateSize(s - displayPadding, s - displayPadding);
-
-		// ctx.fillRect(0, 0, ctx.width, ctx.height);
-
-		// unsubscribe = subscribe(kind, frame => {
-		// 	if (!frame)
-		// 		return;
-
-		// 	ctx.clearAll();
-		// 	ctx.drawImage(frame, 0, 0, ctx.width, ctx.height);
-		// });
 	});
 
 	onDestroy(() => {

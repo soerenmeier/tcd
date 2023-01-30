@@ -5,6 +5,7 @@ use crate::displays::{
 use crate::buffers::Buffer;
 
 use std::io;
+use std::time::Instant;
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{BufReader, AsyncReadExt, AsyncWriteExt};
@@ -116,13 +117,6 @@ async fn handle_stream(
 		// ├────┼───┼──────┤
 		// │ 8  │32 │$Len*8│
 		// └────┴───┴──────┘
-		//
-		// Data Packet (a data packet consists of many nal)
-		// ┌─────┬──────┐
-		// │ Len │ Data │
-		// ├─────┼──────┤
-		// │ 32  │$Len*8│
-		// └─────┴──────┘
 		let displays_len = reader.read_u8().await?;
 
 		if displays_len == 0 {
@@ -144,9 +138,7 @@ async fn handle_stream(
 
 			reader.read_exact(buffer.as_mut()).await?;
 
-			frames.send_buffer(&kind, buffer.into_shared());
-
-			tracing::info!("received buffer");
+			frames.send_buffer(&kind, Instant::now(), buffer.into_shared());
 		}
 	}
 }

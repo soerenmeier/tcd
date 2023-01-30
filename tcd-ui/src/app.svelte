@@ -6,12 +6,12 @@
 
 	import Configuration from './pages/configuration/configuration.svelte';
 	import F16C from './pages/f-16c/f-16c.svelte';
-	// import F18C from './pages/f-18c/f-18c.svelte';
+	import F18C from './pages/f-18c/f-18c.svelte';
 
 	const pages = [
 		{ id: 'config', name: 'Configuration', comp: Configuration },
 		{ id: 'F-16C_50', name: 'F-16C', comp: F16C },
-		// { id: 'FA-18C_hornet', name: 'F-18C', comp: F18C }
+		{ id: 'FA-18C_hornet', name: 'F-18C', comp: F18C }
 	];
 
 	let activePage = null;
