@@ -23,6 +23,7 @@ dunce = "1.0"
 
 [patch.crates-io]
 bytes = { git = "https://github.com/soerenmeier/tokio-bytes" }
+openh264 = { git = "https://github.com/soerenmeier/openh264-rust" }
 
 [profile.release]
 lto = true

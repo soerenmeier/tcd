@@ -36,9 +36,8 @@ use webrtc::track::track_local::track_local_static_sample::{
 	TrackLocalStaticSample
 };
 use webrtc::track::track_local::TrackLocal;
-use webrtc::stats::StatsReportType;
 
-use openh264::encoder::{EncoderConfig, Encoder, RateControlMode};
+use openh264::encoder::{EncoderConfig, Encoder};
 use openh264::formats::YUVSource;
 
 
@@ -201,15 +200,12 @@ impl Connection {
 	}
 }
 
-// every x frames
-const GATHER_STATS_EVERY: usize = 15;
-
 const FRAME_RATE: Duration = Duration::from_millis(1000 / 60);
 
 async fn frame_task(
 	mut frames: FrameReceiver,
 	track: Arc<TrackLocalStaticSample>,
-	peer_connection: Arc<RTCPeerConnection>,
+	_peer_connection: Arc<RTCPeerConnection>,
 	mut state_rx: mpsc::Receiver<State>
 ) -> Result<(), Error> {
 	// let's wait until the connection is established
@@ -218,12 +214,6 @@ async fn frame_task(
 		Some(State::Disconnected) |
 		None => return Ok(())
 	};
-
-	eprintln!("start frame handling");
-
-
-	let mut gather_stats_in = 0;
-	let mut stats;
 
 	let display = frames.display();
 	let config = EncoderConfig::new(display.width, display.height)
@@ -244,23 +234,6 @@ async fn frame_task(
 	// let's try to get some information
 	loop {
 		interval.tick().await;
-
-		if gather_stats_in == 0 {
-			stats = peer_connection.get_stats().await;
-			// for (key, stat) in stats.reports {
-			// 	// let stat = match stat {
-			// 	// 	StatsReportType::CandidatePair(stat) |
-			// 	// 	StatsReportType::LocalCandidate(stat) |
-			// 	// 	StatsReportType::RemoteCandidate(stat)
-			// 	// }
-			// 	if let StatsReportType::CandidatePair(stat) = stat {
-			// 		eprintln!("{:?} {:?} {:?}", key, stat.available_incoming_bitrate, stat.available_outgoing_bitrate);
-			// 	}
-			// }
-			gather_stats_in = GATHER_STATS_EVERY;
-		} else {
-			gather_stats_in -= 1;
-		}
 
 		// check if the connection already closed
 		match state_rx.try_recv() {
@@ -304,6 +277,9 @@ async fn frame_task(
 				let layer = encoded.layer(layer).unwrap();
 				for nal in 0..layer.nal_count() {
 					let nal = layer.nal_unit(nal).unwrap();
+
+					// todo maybe split the buffers into two segments
+					// eprintln!("nal size {:?}", nal.len());
 
 					// write the nal
 					let mut buffer = Buffer::new();

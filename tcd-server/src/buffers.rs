@@ -1,14 +1,45 @@
+// todo benchmark if this is faster than allocating
+
 use std::{mem, slice};
-use std::sync::{Arc, Mutex, LazyLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::ops::{Deref, DerefMut};
 
 // use bytes::
-use simple_bytes::{BytesOwned, BytesRead};
+use simple_bytes::{BytesOwned, BytesRead, BytesSeek};
 
-const BUFFERS_CAP: usize = 30;
-static BUFFERS: LazyLock<Buffers> = LazyLock::new(|| Buffers::new(BUFFERS_CAP));
+static BUFFERS: BufferPool = BufferPool::new(150);
 
+
+pub struct BufferPool {
+	inner: OnceLock<Buffers>,
+	cap: usize
+}
+
+impl BufferPool {
+	fn get(&self) -> &Buffers {
+		self.inner.get_or_init(|| Buffers::new(self.cap))
+	}
+
+	pub const fn new(cap: usize) -> Self {
+		Self {
+			inner: OnceLock::new(),
+			cap
+		}
+	}
+
+	/// if the capacity is zero any capacity can be returned
+	pub fn take(&self, cap: usize) -> Buffer {
+		self.get().take(cap)
+	}
+
+	/// if the capacity is zero any capacity can be returned
+	///
+	/// This might return a buffer which is not of len 0
+	pub fn take_raw(&self, cap: usize) -> Buffer {
+		self.get().take_raw(cap)
+	}
+}
 
 #[derive(Debug)]
 struct Buffers {
@@ -17,21 +48,25 @@ struct Buffers {
 }
 
 impl Buffers {
-	pub fn new(max_cap: usize) -> Self {
+	fn new(max_cap: usize) -> Self {
 		Self {
 			inner: Mutex::new(vec![]),
 			max_cap
 		}
 	}
 
-	pub fn take(&self) -> Buffer {
+	/// the buffer might not be empty
+	///
+	/// But the cursor will always be at 0
+	fn take_raw(&self, cap: usize) -> Buffer {
 		let mut bytes = {
 			let mut inner = self.inner.lock().unwrap();
 			inner.pop()
 				.unwrap_or_else(BytesOwned::new)
 		};
 
-		bytes.resize(0);
+		bytes.as_mut_vec().reserve_exact(cap);
+		bytes.seek(0);
 
 		Buffer {
 			inner: self,
@@ -39,7 +74,21 @@ impl Buffers {
 		}
 	}
 
+	/// the buffer will always have a len of 0
+	fn take(&self, cap: usize) -> Buffer {
+		let mut b = self.take_raw(cap);
+		b.resize(0);
+		b
+	}
+
 	fn return_buffer(&self, mut bytes: BytesOwned) {
+		// let cap = bytes.as_mut_vec().capacity();
+		// if cap > 620_000 {
+		// 	eprintln!("returned buffer with cap {:?}", cap);
+		// }
+
+		// return;
+
 		if bytes.as_mut_vec().capacity() == 0 {
 			return
 		}
@@ -61,8 +110,15 @@ pub struct Buffer<'a> {
 
 impl Buffer<'static> {
 	/// Returns a buffer which is of len 0
+	///
+	/// Do not call this if the buffers are big
 	pub fn new() -> Self {
-		BUFFERS.take()
+		BUFFERS.take(0)
+	}
+
+	#[allow(dead_code)]
+	pub fn with_capacity(cap: usize) -> Self {
+		BUFFERS.take(cap)
 	}
 
 	pub fn into_shared(self) -> SharedBuffer {
@@ -98,7 +154,7 @@ impl SharedBuffer {
 	// Creates an empty Buffer
 	pub fn new() -> Self {
 		Self(Arc::new(Buffer {
-			inner: &BUFFERS,
+			inner: BUFFERS.get(),
 			bytes: BytesOwned::new()
 		}))
 	}
@@ -188,7 +244,23 @@ mod tests {
 		b.write(&nums);
 
 		let shared = b.into_shared();
+
+		let shared_two = shared.clone();
+
 		let bytes = shared.into_bytes();
 		assert_eq!(&bytes[4..], nums);
+
+		assert_eq!(shared_two.clone().into_bytes(), bytes);
+		drop(shared_two);
+
+		// we expect that the current buffer still exists so we will receive
+		// a new buffer
+		assert_eq!(Buffer::new().as_mut_vec().capacity(), 0);
+
+		// now make sure that all buffers are dropped
+		drop(bytes);
+
+		// we should now receive a buffer that has more capacity
+		assert!(Buffer::new().as_mut_vec().capacity() > 0);
 	}
 }

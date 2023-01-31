@@ -5,7 +5,7 @@ use std::time::Instant;
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 
-use tokio::sync::{watch, broadcast};
+use tokio::sync::watch;
 
 use serde::{Serialize, Deserialize};
 
@@ -132,9 +132,6 @@ impl SharedDisplayFrames {
 	}
 }
 
-// we should receive a yuv maximaly 30 times per second
-const CHANNEL_SIZE: usize = 1;
-
 #[derive(Debug, Clone)]
 pub struct DisplayFrames {
 	inner: HashMap<DisplayKind, (Display, Latest<(Instant, SharedBuffer)>)>
@@ -216,35 +213,4 @@ impl FrameReceiver {
 	pub fn latest(&mut self) -> Option<(Instant, SharedBuffer)> {
 		self.latest.latest()
 	}
-
-	// // the first option means if the receiver is still alive
-	// pub fn try_recv(&mut self) -> Option<Option<(SharedBuffer, u64)>> {
-	// 	let mut lagged = 0;
-
-	// 	loop {
-	// 		match self.rx.try_recv() {
-	// 			Ok(b) => return Some(Some((b, lagged))),
-	// 			Err(broadcast::error::TryRecvError::Empty) => return Some(None),
-	// 			Err(broadcast::error::TryRecvError::Lagged(l)) => {
-	// 				lagged += l;
-	// 			},
-	// 			Err(broadcast::error::TryRecvError::Closed) => return None
-	// 		}
-	// 	}
-	// }
-
-	// /// Returns the buffer an a lagged count
-	// pub async fn recv(&mut self) -> Option<(SharedBuffer, u64)> {
-	// 	let mut lagged = 0;
-
-	// 	loop {
-	// 		match self.rx.recv().await {
-	// 			Ok(b) => return Some((b, lagged)),
-	// 			Err(broadcast::error::RecvError::Lagged(l)) => {
-	// 				lagged += l;
-	// 			},
-	// 			Err(broadcast::error::RecvError::Closed) => return None
-	// 		}
-	// 	}
-	// }
 }

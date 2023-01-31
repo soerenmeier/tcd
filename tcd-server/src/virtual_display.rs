@@ -2,7 +2,7 @@ use crate::displays::{
 	DisplaySetup, DisplaySetupWatcher, SharedDisplayFrames, DisplayKind,
 	FrameReceiver
 };
-use crate::buffers::Buffer;
+use crate::buffers::BufferPool;
 
 use std::io;
 use std::time::Instant;
@@ -11,7 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{BufReader, AsyncReadExt, AsyncWriteExt};
 use tokio::task::JoinHandle;
 
-use simple_bytes::{Bytes, BytesRead, BytesWrite};
+use simple_bytes::BytesWrite;
 
 
 const ADDR: &str = "127.0.0.1:5476";
@@ -79,6 +79,9 @@ async fn listener_task(
 	}
 }
 
+// we expect 3 display and all might have two buffers alive at the same time
+static YUV_BUFFERS: BufferPool = BufferPool::new(10);
+
 async fn handle_stream(
 	stream: TcpStream,
 	shared_frames: SharedDisplayFrames,
@@ -133,7 +136,7 @@ async fn handle_stream(
 				continue
 			}
 
-			let mut buffer = Buffer::new();
+			let mut buffer = YUV_BUFFERS.take_raw(len);
 			buffer.resize(len);
 
 			reader.read_exact(buffer.as_mut()).await?;
